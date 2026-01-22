@@ -107,7 +107,7 @@ Stage 5 — Call to Action (Do not show this title):
     |||
     Part 3: Ask them if they want to receive a finish code.
     DO NOT output them as one block. Use '|||' as the separator.
-    """
+    
 Important Guidelines:
 - Never generate or mention a finish code - the system will provide this automatically
 - Ensure meaningful engagement at each stage before progressing
@@ -161,7 +161,7 @@ class ConversationState:
         
     def can_advance_from_stage_2(self) -> bool:
         """Check if Stage 2 (Small Talk) requirements are met."""
-        return len(self.small_talk_topics_covered) >= 3
+        return len(self.small_talk_topics_covered) >= 4
     
     def can_advance_from_stage_3(self) -> bool:
         """Check if Stage 3 (Simulation) requirements are met."""
@@ -186,6 +186,10 @@ class ConversationState:
         # Detect family-related responses
         if any(word in message_lower for word in ["family", "member", "people", "person", "wife", "husband", "child", "parent", "sibling", "alone", "single"]) or re.search(r'\b\d+\b', message):
             self.small_talk_topics_covered.add("family")
+
+        # Detect retirement age responses
+        if any(word in message_lower for word in ["retire", "retirement"]) or re.search(r'\b\d{2}\b', message):
+            self.small_talk_topics_covered.add("retirement_age")
     
     def check_for_i_am_phrase(self, message: str) -> bool:
         """Check if user used 'I am' phrase in their message."""
@@ -418,7 +422,7 @@ class SimulationApp:
         )
         
         # Hide Streamlit branding
-        st.markdown(r"""
+        st.markdown("""
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
