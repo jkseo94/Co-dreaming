@@ -108,7 +108,7 @@ class AIService:
             return response.choices[0].message.content
         except Exception as e:
             st.error(f"AI Error: {e}")
-            return "Connection to 2060 interrupted."
+            return "Connection interrupted."
 
 # ==========================================
 # APP LOGIC (Controller)
@@ -147,14 +147,16 @@ class SimulationApp:
             header {visibility: hidden;}
             </style>
             """, unsafe_allow_html=True)
-        st.title("A window into the future")
+        st.title("Saving for the future")
 
     def handle_initial_message(self):
         if not st.session_state.messages:
-            welcome_msg = ""
-            Hello! I would like to invite you to a short session designed to think about retirement. It can sometimes feel very distant, but exploring it now helps clarify what matters to you. 
-
-Are you ready?"""
+            # FIXED: Used standard string concatenation with \n to avoid triple-quote syntax errors
+            welcome_msg = (
+                "Hello! I’d like to invite you to a short session designed to think about retirement. "
+                "It can sometimes feel very distant, but exploring it now helps clarify what matters to you.\n\n"
+                "Are you ready?"
+            )
             st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
 
     def render_chat_history(self):
@@ -165,7 +167,7 @@ Are you ready?"""
 
     def determine_next_step(self, assistant_text):
         """Parsing logic to determine state transitions based on AI response content"""
-        text = assistant_text.lower()
+        # Simple increment logic based on prompt structure
         current = st.session_state.current_step
 
         if current == 1:
@@ -200,7 +202,7 @@ Are you ready?"""
 
             # 3. Generate Assistant Response
             with st.chat_message("assistant", avatar="🤖"):
-                with st.spinner("Connecting to 2060..."):
+                with st.spinner("..."):
                     response_text = self.ai.generate_response(
                         st.session_state.messages,
                         st.session_state.current_step
@@ -220,7 +222,7 @@ Are you ready?"""
                 # Update step for next turn
                 st.session_state.current_step = next_step
 
-            # 4. Save to DB if complete (Goal 2 & 1)
+            # 4. Save to DB if complete
             if st.session_state.simulation_complete and not st.session_state.data_saved:
                 self.db.save_full_conversation(
                     st.session_state.finish_code,
