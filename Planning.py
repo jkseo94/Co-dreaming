@@ -1,4 +1,4 @@
-"""
+""""""
 Retirement Planning Chatbot
 A Streamlit application that guides users through a structured conversation
 about retirement planning using AI-powered dialogue.
@@ -40,7 +40,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
 SYSTEM_PROMPT = """
-Role: You are an AI agent designed to help users identify and organize future plans needed to arrive at a financially prepared retirement. Your ultimate purpose is to help users predetermine a course of action aimed at achieving some goals and decision-making in intertemporal choices, such as saving.
+Role: You are an AI agent designed to help users generate simulations of future-oriented thinking that involves imaginatively placing oneself in a hypothetical scenario. Your ultimate purpose is to help users mentally pre-experience the future and decision-making in intertemporal choices, such as saving.
 
 Constraints:
 - Make sure each conversation response is less than 80 words.
@@ -50,61 +50,56 @@ Constraints:
 Dialogue Stages:
 Follow this sequence strictly. Do not skip steps.
 
-Stage 1 — Introduction:
-- Introduce yourself as follows: "Hello! Thank you for joining.\n\n
-I’m here to be your thinking partner for a quick session on your life after your main career—whether that means traditional retirement or simply having the financial freedom to work less.\n\n
-Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers.\n\n
-Ready to look ahead?"
+Stage 1 - Introduction:
+- Introduce yourself as follows: "Hello! Thank you for joining. I'm here to be your thinking partner for a quick session on your life after your main career - whether that means traditional retirement or simply having the financial freedom to work less. Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers. Ready to look ahead?"
 
-Stage 2 — Small Talk:
+Stage 2 - Small Talk:
 - Smoothly transition by letting users know you want to get to know them better.
 - Ask ALL of the following questions ONE BY ONE (wait for response between each):
   1. "How old are you right now?"
   2. "How do you describe your gender?"
   3. "How many family members do you currently have?"
   4. "At what age do you expect to retire or start significantly cutting back on work?"
-- **INTERNAL LOGIC (Perform after Question 4):**
-  - **IF the user provides a number:** Calculate [Answer to Q4] minus [Answer to Q1] = X. (e.g., 65 - 30 = 35). Remember "35 years" as the timeframe for the final cue.
-  - **IF the user is unsure (e.g., "I don't know"):** Do not force a number. Simply accept it and set the timeframe as "your future retirement" for the final cue.
-  - **IF the user is already retired:** Set the timeframe as "a few years".
+- INTERNAL LOGIC (Perform after Question 4):
+  - IF the user provides a number: Calculate [Answer to Q4] minus [Answer to Q1] = X. Remember "X years" as the timeframe for the final cue.
+  - IF the user is unsure: Do not force a number. Set the timeframe as "your future retirement" for the final cue.
+  - IF the user is already retired: Set the timeframe as "a few years".
 
-Stage 3 — Planning:
+Stage 3 - Planning:
 - Guide users to identify and organize the concrete steps needed to arrive at their future where work is optional or done on their own terms.
-- Help them construct a future plan to achieve financial security through saving—whether that means fully retiring, working fewer hours to pursue passions, or simply having the freedom to design their days exactly as they wish.
-- CRITICAL: Ask them to describe specific future plans by using the following opening questions: "What are the steps to retire in a financially prepared state through years of saving?\n\n
-I’d like you to think about three main steps to achieve that retirement. These can be big or small.\n\n 
-What is the first step?"
+- Help them construct a future plan to achieve financial security through saving.
+- CRITICAL: Ask them to describe specific future plans by using the following opening question: "What are the steps to retire in a financially prepared state through years of saving? I'd like you to think about three main steps to achieve that retirement. These can be big or small. What is the first step?"
+- Wait for their response about the first step before proceeding.
 
-Stage 4 — Predetermination:
-- Help users make their plans vividly with detailed and specific questions.
-- Ask about: specific execution details, such as how they will execute the step, when they will do it, and where it will take place.
-- Break down questions into separate responses (one step at a time). Do not ask for the full plan at once. (e.g., “What is the first step?” -> asking execution details -> “What is the second step?” …)
+Stage 4 - Predetermination:
+- Help users make their plans vivid with detailed and specific questions.
+- Ask about specific execution details: how they will execute the step, when they will do it, and where it will take place.
+- Break down questions into separate responses (one step at a time). Do not ask for the full plan at once.
+- Process: Ask about Step 1 -> Get execution details (how, when, where) -> Ask about Step 2 -> Get execution details -> Ask about Step 3 -> Get execution details
 - Continue asking follow-up questions to actively facilitate users mentally constructing the course of action.
-- This stage should last 5-7 conversational turns (guiding them through 3 distinct steps).
-- Only proceed to Stage 5 after sufficient execution detail has been gathered.
+- This stage should last 5-7 conversational turns (guiding them through 3 distinct steps with details).
+- Only proceed to Stage 5 after sufficient execution detail has been gathered for all 3 steps.
 
-Stage 5 — Call to Action (Do not show this title): 
-- **Step 1: Synthesis.** Based on the concrete steps the user provided in the previous turns, write a short, structured paragraph (3-4 sentences) summarizing their future plan. 
-- You MUST follow this format strictly: 
- 1. Say: "Here is the action plan for your future: [Insert the paragraph you wrote following below format]" 
- 2. **Start with the calculated timeframe:** - **If you calculated X in Stage 2:** Start with "**To retire prepared in [X] years**..." (e.g., "To retire prepared in 20 years..."). - **If X was unknown:** Start with "**To retire prepared in the future**..." 
- 3. Use "I will" statements to denote determination (e.g., "First, I will...", "Then, I will..."). 
- 4. Include the specific execution details (how, when, where) the user planned for each step. 
-- **Step 2: Presentation & Validation.** Present this text to the user naturally. 
-- Say: "How does thinking about this future plan make you feel?" in a separate paragraph. 
-- **Step 3: Validation.** When the user responds with their feeling: 
-- FIRST, warmly acknowledge.
-- THEN, smoothly transition using a bridge.
-- **Step 4: Closing.** End on a hopeful note
- - You must output exactly three distinct parts.
- Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective.\n\n"
- Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?\n\n"
- Part 3: Ask them if they want to receive a finish code.
-    
+Stage 5 - Call to Action:
+- This stage has multiple sub-steps that must happen in sequence.
+- Step 1 Synthesis: Based on the concrete steps the user provided, write a short structured paragraph (3-4 sentences) summarizing their future plan.
+  - Start with the calculated timeframe: "To retire prepared in [X] years..." or "To retire prepared in your future..." or "To retire prepared in a few years..."
+  - Use "I will" statements to denote determination.
+  - Include the specific execution details (how, when, where) the user planned for each step.
+  - Say "Here is the action plan for your future:" followed by the paragraph.
+  - Then ask "How does thinking about this future plan make you feel?" in a separate paragraph.
+- Step 2 User Response: Wait for the user to respond with their feeling.
+- Step 3 Closing: When the user responds, provide ALL of the following in ONE response:
+  - First: Warmly acknowledge their feeling (e.g., "I am so glad that vision brings you joy. Holding onto that positive feeling is important because it can motivate you to make the necessary financial decisions today for that joyful future.")
+  - Then: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective."
+  - Then: "Your tomorrow is built on what you do today. Why not invest in a brighter future by saving a small amount every month starting today?"
+  - Finally: "Would you like to receive a finish code?"
+- Step 4 Code Request: Wait for user to say yes, then the system will provide the finish code automatically.
+
 Important Guidelines:
 - Never generate or mention a finish code - the system will provide this automatically
 - Ensure meaningful engagement at each stage before progressing
-- If a user gives a very brief answer, ask follow-up questions to encourage elaboration
+- If a user gives a brief answer, ask follow-up questions to encourage elaboration
 - Maintain a warm, supportive tone throughout
 """
 
@@ -136,9 +131,15 @@ class ConversationState:
         self.turn_count: int = 0
         self.stage_turn_count: int = 0
         self.stage_4_turns: int = 0
-        self.steps_collected: int = 0  # Track number of steps mentioned (need 3)
-        self.execution_details_collected: int = 0  # Track execution details collected
         self.small_talk_topics_covered: set = set()
+        
+        # Stage 5 sub-steps
+        self.provided_summary: bool = False
+        self.asked_feeling: bool = False
+        self.user_responded_feeling: bool = False
+        self.provided_closing: bool = False
+        self.asked_for_code: bool = False
+        self.user_wants_code: bool = False
         
     def advance_turn(self):
         """Increment turn counters."""
@@ -157,15 +158,37 @@ class ConversationState:
         return len(self.small_talk_topics_covered) >= 4
     
     def can_advance_from_stage_3(self) -> bool:
-        """Check if Stage 3 (Planning) requirements are met - need at least 1 step mentioned."""
-        # User should have responded to the opening question about first step
+        """Check if Stage 3 (Planning intro) requirements are met."""
+        # Just need to ask the opening question and get a response
         return self.stage_turn_count >= 1
     
     def can_advance_from_stage_4(self) -> bool:
         """Check if Stage 4 (Predetermination) requirements are met."""
-        # Need: 5+ turns AND ideally 3 steps with execution details
-        # We'll rely on turn count since tracking exact content is complex
+        # Need at least 5 turns collecting all 3 steps with execution details
         return self.stage_4_turns >= 5
+    
+    def mark_summary_provided(self):
+        """Mark that Stage 5 summary was provided."""
+        self.provided_summary = True
+        self.asked_feeling = True  # Summary includes feeling question
+    
+    def mark_feeling_response(self):
+        """Mark that user responded to feeling question."""
+        self.user_responded_feeling = True
+    
+    def mark_closing_provided(self):
+        """Mark that closing message was provided."""
+        self.provided_closing = True
+        self.asked_for_code = True  # Closing includes code question
+    
+    def check_for_code_request(self, message: str) -> bool:
+        """Check if user wants finish code."""
+        message_lower = message.lower()
+        affirmative = ["yes", "yeah", "yep", "sure", "ok", "okay", "please", "code"]
+        if any(word in message_lower for word in affirmative):
+            self.user_wants_code = True
+            return True
+        return False
     
     def check_user_message_for_topics(self, message: str):
         """Extract topics from user message for stage 2."""
@@ -186,20 +209,6 @@ class ConversationState:
         # Detect retirement age responses
         if any(word in message_lower for word in ["retire", "retirement", "quit", "stop working"]) or re.search(r'\b\d{2}\b', message):
             self.small_talk_topics_covered.add("retirement_age")
-    
-    def check_for_step_mention(self, message: str):
-        """Check if user mentioned a step in their planning."""
-        message_lower = message.lower()
-        
-        # Check for step indicators
-        step_indicators = ["first", "second", "third", "1st", "2nd", "3rd", "step 1", "step 2", "step 3"]
-        if any(indicator in message_lower for indicator in step_indicators):
-            self.steps_collected += 1
-        
-        # Check for execution detail keywords (how, when, where)
-        execution_keywords = ["will", "going to", "plan to", "when", "where", "how", "by", "at", "in"]
-        if any(keyword in message_lower for keyword in execution_keywords):
-            self.execution_details_collected += 1
 
 
 # ==========================================
@@ -354,21 +363,26 @@ class AIService:
             context_parts.append("You must ask about: age, gender, family members, and retirement age (one question at a time)")
             
         elif stage == Stage.PLANNING:
-            context_parts.append("CRITICAL: User must respond with their first step for retirement planning")
-            context_parts.append("Ask the opening question about three main steps to retire in a financially prepared state")
-            context_parts.append("Wait for their response before proceeding to Stage 4")
+            context_parts.append("Ask the opening question about three main steps to retire financially prepared")
+            context_parts.append("Wait for user's response about first step, then proceed to Stage 4")
             
         elif stage == Stage.PREDETERMINATION:
-            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns in this stage")
-            context_parts.append(f"Steps collected so far: {state.steps_collected}/3")
+            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns")
             if state.stage_4_turns < 5:
-                context_parts.append("Continue guiding through all 3 steps with execution details (how, when, where)")
-                context_parts.append("Ask about one step at a time with its execution details before moving to next step")
+                context_parts.append("Guide user through ALL 3 STEPS with execution details (how, when, where)")
+                context_parts.append("ONE step at a time: Step 1 + details -> Step 2 + details -> Step 3 + details")
             else:
-                context_parts.append("You have completed 5 turns. Verify all 3 steps have execution details before wrapping up")
+                context_parts.append("You completed 5+ turns. Verify all 3 steps have details before moving to Stage 5")
                 
         elif stage == Stage.CALL_TO_ACTION:
-            context_parts.append("Provide synthesis of their plan, ask about feelings, give call to action, then final message")
+            if not state.provided_summary:
+                context_parts.append("CRITICAL: Provide synthesis paragraph + ask 'How does thinking about this future plan make you feel?'")
+            elif not state.user_responded_feeling:
+                context_parts.append("Wait for user to respond with their feeling")
+            elif not state.provided_closing:
+                context_parts.append("CRITICAL: Provide full closing (acknowledge feeling + 3 closing messages + 'Would you like to receive a finish code?')")
+            else:
+                context_parts.append("Wait for user to confirm they want the finish code")
         
         return " | ".join(context_parts)
 
@@ -421,8 +435,8 @@ class PlanningApp:
     def _render_ui(self):
         """Render page configuration and styling."""
         st.set_page_config(
-            page_title="Saving for the Future",
-            page_icon="💰",
+            page_title="Planning for the Future",
+            page_icon="📋",
             layout="centered"
         )
         
@@ -435,7 +449,7 @@ class PlanningApp:
             </style>
         """, unsafe_allow_html=True)
         
-        st.title("💰 Saving for the Future")
+        st.title("📋 Planning for the Future")
     
     def _handle_initial_message(self):
         """Send initial greeting if conversation just started."""
@@ -497,15 +511,20 @@ class PlanningApp:
                     st.error("Failed to generate response. Please try again.")
                     return
                 
+                # Check if we should advance stages BEFORE appending message
+                self._check_stage_progression()
+                
+                # If just completed, append finish code
+                if st.session_state.state.stage == Stage.COMPLETE:
+                    response_text += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
+                    st.session_state.planning_complete = True
+                
                 st.markdown(response_text)
                 
                 # Save assistant message
                 assistant_message = Message(role="assistant", content=response_text)
                 st.session_state.messages.append(assistant_message)
                 st.session_state.state.advance_turn()
-                
-                # Check if we should advance stages AFTER saving the message
-                self._check_stage_progression()
                 
                 # Check if conversation just completed
                 if st.session_state.state.stage == Stage.COMPLETE and not st.session_state.planning_complete:
