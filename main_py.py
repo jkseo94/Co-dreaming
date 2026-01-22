@@ -2,6 +2,9 @@
 Retirement Simulation Chatbot
 A Streamlit application that guides users through a structured conversation
 about retirement planning using AI-powered dialogue.
+
+Author: Refactored Version
+Date: 2026-01-22
 """
 
 import streamlit as st
@@ -9,7 +12,7 @@ from openai import OpenAI
 from supabase import create_client
 from datetime import datetime
 from enum import IntEnum
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 import random
 import time
@@ -30,21 +33,6 @@ class Stage(IntEnum):
     CALL_TO_ACTION = 5
     COMPLETE = 6
 
-
-# Stage-specific requirements for validation
-STAGE_REQUIREMENTS = {
-    Stage.SMALL_TALK: {
-        "min_questions": 3,
-        "required_topics": ["age", "gender", "family"],
-    },
-    Stage.SIMULATION: {
-        "requires_i_am_phrase": True,
-    },
-    Stage.PRE_EXPERIENCE: {
-        "min_turns": 5,
-        "max_turns": 7,
-    },
-}
 
 FINISH_CODE_MIN = 10000
 FINISH_CODE_MAX = 99999
@@ -161,12 +149,16 @@ class ConversationState:
         """Extract topics from user message for stage 2."""
         message_lower = message.lower()
         
-        # Simple keyword detection for demonstration
-        if any(word in message_lower for word in ["year", "old", "age"]):
+        # Detect age-related responses
+        if any(word in message_lower for word in ["year", "old", "age"]) or re.search(r'\b\d{1,2}\b', message):
             self.small_talk_topics_covered.add("age")
-        if any(word in message_lower for word in ["male", "female", "man", "woman", "gender", "non-binary"]):
+            
+        # Detect gender-related responses
+        if any(word in message_lower for word in ["male", "female", "man", "woman", "gender", "non-binary", "they", "he", "she"]):
             self.small_talk_topics_covered.add("gender")
-        if any(word in message_lower for word in ["family", "member", "people", "person", "wife", "husband", "child", "parent"]):
+            
+        # Detect family-related responses
+        if any(word in message_lower for word in ["family", "member", "people", "person", "wife", "husband", "child", "parent", "sibling", "alone", "single"]) or re.search(r'\b\d+\b', message):
             self.small_talk_topics_covered.add("family")
     
     def check_for_i_am_phrase(self, message: str) -> bool:
@@ -327,18 +319,18 @@ class AIService:
         if stage == Stage.SMALL_TALK:
             covered = ", ".join(state.small_talk_topics_covered) if state.small_talk_topics_covered else "none"
             context_parts.append(f"Topics covered: {covered}")
-            context_parts.append("You must ask about: age, gender, and family members (one at a time)")
+            context_parts.append("You must ask about: age, gender, and family members (one question at a time)")
             
         elif stage == Stage.SIMULATION:
             context_parts.append("CRITICAL: User must respond with an 'I am' statement describing a future event")
             context_parts.append("Do not proceed until you receive this")
             
         elif stage == Stage.PRE_EXPERIENCE:
-            context_parts.append(f"Turn {state.stage_4_turns + 1} of 5-7 required turns in this stage")
+            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns in this stage")
             if state.stage_4_turns < 5:
-                context_parts.append("Continue asking detailed follow-up questions")
+                context_parts.append("Continue asking detailed follow-up questions about their visualization")
             else:
-                context_parts.append("You may now transition to Stage 5 if sufficient detail gathered")
+                context_parts.append("You have completed 5 turns. You may wrap up this stage if sufficient detail gathered")
                 
         elif stage == Stage.CALL_TO_ACTION:
             context_parts.append("Provide recap, ask about feelings, give call to action, then final message")
@@ -381,7 +373,7 @@ class SimulationApp:
             if self.db.is_finish_code_unique(code):
                 return code
         
-        # Fallback: use timestamp
+        # Fallback: use timestamp-based code
         return str(int(time.time() * 1000) % 100000)
     
     def run(self):
@@ -470,7 +462,7 @@ class SimulationApp:
                     st.error("Failed to generate response. Please try again.")
                     return
                 
-                # Check if we should advance stages
+                # Check if we should advance stages BEFORE appending message
                 self._check_stage_progression()
                 
                 # If just completed, append finish code
@@ -493,7 +485,6 @@ class SimulationApp:
             )
             if success:
                 st.session_state.data_saved = True
-                st.toast("✅ Conversation saved successfully!")
     
     def _process_user_input(self, user_input: str):
         """Process user input and update state accordingly."""
@@ -501,7 +492,7 @@ class SimulationApp:
         
         # Check for readiness to start (from Stage 1)
         if state.stage == Stage.INTRODUCTION:
-            affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep"]
+            affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep", "let's", "lets"]
             if any(word in user_input.lower() for word in affirmative_words):
                 state.advance_stage()
         
@@ -527,4 +518,14 @@ class SimulationApp:
             state.advance_stage()
             
         elif state.stage == Stage.CALL_TO_ACTION and state.stage_turn_count >= 2:
-            # After recap and call to action (typically
+            # After recap and call to action (typically 2-3 turns)
+            state.advance_stage()
+
+
+# ==========================================
+# EXECUTION
+# ==========================================
+
+if __name__ == "__main__":
+    app = SimulationApp()
+    app.run()
