@@ -151,9 +151,10 @@ class SimulationApp:
 
     def handle_initial_message(self):
         if not st.session_state.messages:
-            welcome_msg = "Hello! I’d like to invite you to a short session designed to think about retirement. It can sometimes feel very distant, but exploring it now helps clarify what matters to you. 
+            welcome_msg = ""
+            Hello! I’d like to invite you to a short session designed to think about retirement. It can sometimes feel very distant, but exploring it now helps clarify what matters to you. 
 
-Are you ready?"
+Are you ready?"""
             st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
 
     def render_chat_history(self):
