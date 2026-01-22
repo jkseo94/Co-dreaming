@@ -418,14 +418,14 @@ class SimulationApp:
         )
         
         # Hide Streamlit branding
-        st.markdown("""
+        st.markdown(r"""
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             header {visibility: hidden;}
             .stChatMessage {padding: 1rem;}
             </style>
-            """, unsafe_allow_html=True)
+         """, unsafe_allow_html=True)
         
         st.title("💰 Saving for the Future")
     
