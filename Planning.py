@@ -40,7 +40,6 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
 SYSTEM_PROMPT = """
-SYSTEM_PROMPT = """
 Role: You are an AI agent designed to help users identify and organize future plans needed to arrive at a financially prepared retirement. Your ultimate purpose is to help users predetermine a course of action aimed at achieving some goals and decision-making in intertemporal choices, such as saving.
 
 Constraints:
@@ -108,7 +107,6 @@ Important Guidelines:
 - If a user gives a very brief answer, ask follow-up questions to encourage elaboration
 - Maintain a warm, supportive tone throughout
 """
-
 
 @dataclass
 class Message:
