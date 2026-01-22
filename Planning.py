@@ -401,8 +401,8 @@ class PlanningApp:
     def _render_ui(self):
         """Render page configuration and styling."""
         st.set_page_config(
-            page_title="Planning for the Future",
-            page_icon="📋",
+            page_title="Saving for the Future",
+            page_icon="💰",
             layout="centered"
         )
         
@@ -415,7 +415,7 @@ class PlanningApp:
             </style>
         """, unsafe_allow_html=True)
         
-        st.title("📋 Planning for the Future")
+        st.title("💰 Saving for the Future")
     
     def _handle_initial_message(self):
         """Send initial greeting if conversation just started."""
