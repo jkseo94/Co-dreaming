@@ -51,12 +51,9 @@ Dialogue Stages:
 Follow this sequence strictly. Do not skip steps.
 
 Stage 1 — Introduction:
-- Introduce yourself as follows: "Hello! Thank you for joining.
-|||
-I’m here to be your thinking partner for a quick session on your life after your main career—whether that means traditional retirement or simply having the financial freedom to work less.
-|||
-Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers.
-|||
+- Introduce yourself as follows: "Hello! Thank you for joining.\n\n
+I’m here to be your thinking partner for a quick session on your life after your main career—whether that means traditional retirement or simply having the financial freedom to work less.\n\n
+Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers.\n\n
 Ready to look ahead?"
 
 Stage 2 — Small Talk:
@@ -100,13 +97,10 @@ Stage 5 — Call to Action (Do not show this title):
     - FIRST, warmly acknowledge (e.g., "I am so glad that vision brings you joy.").
     - THEN, smoothly transition using a bridge (e.g., "Holding onto that positive feeling is important because...").
 - **Step 4: Closing.** End on a hopeful note
-    - You must output exactly three distinct parts, separated by '|||'.
-    Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective."
-    |||
-    Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?"
-    |||
+    - You must output exactly three distinct parts.
+    Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective.\n\n"
+    Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?\n\n"
     Part 3: Ask them if they want to receive a finish code.
-    DO NOT output them as one block. Use '|||' as the separator.
     
 Important Guidelines:
 - Never generate or mention a finish code - the system will provide this automatically
@@ -439,10 +433,10 @@ class SimulationApp:
             welcome_message = Message(
                 role="assistant",
                 content=(
-                    "Hello! I'd like to invite you to a short session designed to "
-                    "think about retirement. It can sometimes feel very distant, but "
-                    "exploring it now helps clarify what matters to you.\n\n"
-                    "Are you ready?"
+                    "Hello! Thank you for joining.\n\n"
+                    "I’m here to be your thinking partner for a quick session on your life after your main career—whether that means traditional retirement or simply having the financial freedom to work less.\n\n"
+                    "Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers.\n\n"
+                    "Ready to look ahead?"
                 )
             )
             st.session_state.messages.append(welcome_message)
