@@ -87,7 +87,8 @@ class DatabaseService:
 
     def save_full_conversation(self, finish_code, messages):
         if not self.supabase:
-            return
+            return False # 연결 실패 시 False 반환
+            
         data = {
             "finish_code": finish_code,
             "full_conversation": messages,
@@ -95,8 +96,10 @@ class DatabaseService:
         }
         try:
             self.supabase.table("full_conversations").insert(data).execute()
+            return True # 저장 성공 시 True 반환
         except Exception as e:
             st.error(f"Failed to save conversation: {e}")
+            return False # 에러 발생 시 False 반환
 
 class AIService:
     def __init__(self):
@@ -179,6 +182,7 @@ class SimulationApp:
                 st.markdown(msg["content"])
 
     def handle_user_input(self):
+        # 완료되었으면 코드만 보여주고 입력창 숨김 처리도 가능하나, 여기서는 정보만 보여줌
         if st.session_state.simulation_complete:
             st.info(f"Simulation ended. Your code: {st.session_state.finish_code}")
             return
@@ -190,7 +194,6 @@ class SimulationApp:
                 st.markdown(prompt)
 
             # 2. Stage Logic: Transition from Intro (Step 0) to Small Talk (Step 2)
-            # 사용자가 Intro에 대답("Yes" 등)하면 바로 Stage 2로 진입한다고 가정
             if st.session_state.current_step == 0:
                 st.session_state.current_step = 2
             
@@ -221,15 +224,16 @@ class SimulationApp:
                 # 태그가 발견되었을 때만 Stage 숫자 증가
                 if move_to_next_stage and not st.session_state.simulation_complete:
                     st.session_state.current_step += 1
-                    # 디버깅: print(f"Moved to Step {st.session_state.current_step}")
 
-            # 4. Save Logic
+            # 4. Save Logic (메시지 저장 후 즉시 실행)
             if st.session_state.simulation_complete and not st.session_state.data_saved:
-                self.db.save_full_conversation(
+                success = self.db.save_full_conversation(
                     st.session_state.finish_code,
                     st.session_state.messages
                 )
-                st.session_state.data_saved = True
+                if success:
+                    st.session_state.data_saved = True
+                    st.success("Conversation saved successfully!") # 저장 확인 메시지
 
 if __name__ == "__main__":
     app = SimulationApp()
