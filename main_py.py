@@ -172,6 +172,12 @@ class SimulationApp:
             )
             st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
 
+    def render_chat_history(self):
+        for msg in st.session_state.messages:
+            avatar = "🤖" if msg["role"] == "assistant" else None
+            with st.chat_message(msg["role"], avatar=avatar):
+                st.markdown(msg["content"])
+
     def handle_user_input(self):
         if st.session_state.simulation_complete:
             st.info(f"Simulation ended. Your code: {st.session_state.finish_code}")
