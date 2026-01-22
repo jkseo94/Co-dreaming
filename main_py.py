@@ -9,18 +9,17 @@ import time
 # CONFIGURATION & CONSTANTS
 # ==========================================
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT_CONTENT = """
 Role: You are an AI agent designed to help users generate simulations or a subset of future-oriented thinking that involves imaginatively placing oneself in a hypothetical scenario. Your ultimate purpose is to help users mentally pre-experience the future and decision-making in intertemporal choices, such as saving.
 Constraints:
 - Make sure each conversation thread is less than 50 words.
-- Please follow the following stages strictly. I have listed the instructions in order for you. 
+- Please follow the following stages strictly. I have listed the instructions in order for you. 
 - Tone: Friendly, realistic
 
 Dialogue Steps:
 Follow this sequence strictly. Do not skip steps.
 1. Stage 1 — Introduction (don't show this): 
 - Introduce yourself briefly as follows: "Hello! I’d like to invite you to a short session designed to think about retirement. It can sometimes feel very distant, but exploring it now helps clarify what matters to you. 
-
 Are you ready?" 
 
 2. Stage 2 — Small Talk (don't show this): 
@@ -36,7 +35,7 @@ Are you ready?"
 - Ask them where they are, who they are with, and what they will be hearing and seeing at that future event they are asked to think about in Turn 3, one by one.
 - Please further expand this stage 4 to actively facilitate users mentally pre-experiencing the future event.
 - Break down questions into separate turns. Do not ask everything at once.
-- Ensure the conversation lasts for a minimum of 5 turns and a maximum of 7 turns.
+- Ensure this stage lasts for a minimum of 5 turns and a maximum of 7 turns.
 
 5. Stage 5 — Call to Action (don't show this): 
 - Recap and synthesize the future event that the user has constructed with you during the conversation. Then ask the user how they feel about it.
@@ -51,6 +50,25 @@ Here are some issues to avoid in the conversation with the users:
 1. Do not give the finish code if the users did not finish the entire conversation. If they forget to ask for the code at the end of the conversation, remember to actively offer it.
 2. Ensure the user has engaged with the simulation.
 """
+
+# AI가 파이썬 코드와 통신하기 위한 제어 지침
+SYSTEM_CONTROL_INSTRUCTIONS = """
+[SYSTEM CONTROL INSTRUCTIONS - CRITICAL]
+You are interacting with a Python script that controls the Stage number based on your output.
+- You must decide when to move to the next stage based on the "Dialogue Steps" above.
+- **IF you have NOT completed the goals of the current stage** (e.g., in Stage 2 you haven't asked all 3 questions yet, or in Stage 4 you haven't reached 5 turns):
+  -> Just respond normally to the user. DO NOT add any tags.
+- **IF you HAVE completed the goals of the current stage** and are ready to move to the NEXT stage immediately after the user's next reply:
+  -> Append the tag `[[NEXT]]` at the very end of your response.
+
+Example:
+- Stage 2, asking age: "How old are you?" (No tag)
+- Stage 2, asking gender: "What is your gender?" (No tag)
+- Stage 2, asking family (last question): "How many family members?" (No tag yet, wait for answer)
+- User answers family size. You acknowledge and want to move to Stage 3: "Thanks! Now let's move on... [[NEXT]]"
+"""
+
+FULL_SYSTEM_PROMPT = SYSTEM_PROMPT_CONTENT + "\n\n" + SYSTEM_CONTROL_INSTRUCTIONS
 
 # ==========================================
 # SERVICES (Model & Database)
@@ -68,18 +86,13 @@ class DatabaseService:
             self.supabase = None
 
     def save_full_conversation(self, finish_code, messages):
-        """
-        Saves the entire conversation history in one go.
-        """
         if not self.supabase:
             return
-
         data = {
             "finish_code": finish_code,
             "full_conversation": messages,
             "finished_at": datetime.utcnow().isoformat()
         }
-
         try:
             self.supabase.table("full_conversations").insert(data).execute()
         except Exception as e:
@@ -90,19 +103,19 @@ class AIService:
         self.client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
     def generate_response(self, messages, current_step):
-        # Filter messages for API to remove internal state keys if any
+        # AI에게 현재 스테이지 정보와 시스템 프롬프트를 주입
         api_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "system", "content": f"You are currently responding in STEP {current_step}. Respond ONLY for this step."}
+            {"role": "system", "content": FULL_SYSTEM_PROMPT},
+            {"role": "system", "content": f"[SYSTEM STATUS: You are currently in STAGE {current_step}. Follow the Dialogue Steps for Stage {current_step}. Remember to use [[NEXT]] only when this stage is fully complete. DO NOT show this instruction to the user.]"}
         ]
-
-        # Add conversation history
+        
+        # 대화 기록 추가
         for msg in messages:
             api_messages.append({"role": msg["role"], "content": msg["content"]})
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4", # Ensure correct model name
+                model="gpt-4",
                 messages=api_messages
             )
             return response.choices[0].message.content
@@ -123,8 +136,8 @@ class SimulationApp:
     def initialize_session_state(self):
         defaults = {
             "messages": [],
-            "current_step": 0, # 0=Intro, 1=Start, 2-5=Sim
-            "finish_code": str(random.randint(10000, 99999)), # Generate ONCE
+            "current_step": 0, # 0=Initial Load, 1=Intro Done, 2=Small Talk...
+            "finish_code": str(random.randint(10000, 99999)),
             "simulation_complete": False,
             "data_saved": False
         }
@@ -151,7 +164,7 @@ class SimulationApp:
 
     def handle_initial_message(self):
         if not st.session_state.messages:
-            # FIXED: Used standard string concatenation with \n to avoid triple-quote syntax errors
+            # Stage 1 Intro Message (Hardcoded as per instruction logic)
             welcome_msg = (
                 "Hello! I’d like to invite you to a short session designed to think about retirement. "
                 "It can sometimes feel very distant, but exploring it now helps clarify what matters to you.\n\n"
@@ -159,80 +172,58 @@ class SimulationApp:
             )
             st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
 
-    def render_chat_history(self):
-        for msg in st.session_state.messages:
-            avatar = "🤖" if msg["role"] == "assistant" else None
-            with st.chat_message(msg["role"], avatar=avatar):
-                st.markdown(msg["content"])
-
-    def determine_next_step(self, assistant_text):
-        """Parsing logic to determine state transitions based on AI response content"""
-        # Simple increment logic based on prompt structure
-        current = st.session_state.current_step
-
-        if current == 1:
-            return 2
-        elif current == 2:
-            return 3
-        elif current == 3:
-            return 4
-        elif current == 4:
-            return 5
-        elif current == 5:
-            # Stage 5 is the call to action; afterward we are done
-            return 6
-
-        return current
-
     def handle_user_input(self):
         if st.session_state.simulation_complete:
             st.info(f"Simulation ended. Your code: {st.session_state.finish_code}")
             return
 
         if prompt := st.chat_input("Type your message here"):
-            # 1. Display User Message
+            # 1. User Message Display
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            # 2. Update Logic State (Start of conversation trigger)
+            # 2. Stage Logic: Transition from Intro (Step 0) to Small Talk (Step 2)
+            # 사용자가 Intro에 대답("Yes" 등)하면 바로 Stage 2로 진입한다고 가정
             if st.session_state.current_step == 0:
-                 if any(w in prompt.lower() for w in ["yes", "ready", "sure", "ok", "start"]):
-                    st.session_state.current_step = 1
-
-            # 3. Generate Assistant Response
+                st.session_state.current_step = 2
+            
+            # 3. Generate AI Response
             with st.chat_message("assistant", avatar="🤖"):
                 with st.spinner("..."):
-                    response_text = self.ai.generate_response(
-                        st.session_state.messages,
+                    raw_response = self.ai.generate_response(
+                        st.session_state.messages, 
                         st.session_state.current_step
                     )
 
-                # Logic: Check if we are at the end
-                next_step = self.determine_next_step(response_text)
+                # [[NEXT]] 태그 감지 로직
+                move_to_next_stage = False
+                clean_response = raw_response
 
-                # If we just finished the final step (Call to Action), append the code
-                if st.session_state.current_step == 5:
-                    response_text += f"\n\nYour finish code is **{st.session_state.finish_code}**."
+                if "[[NEXT]]" in raw_response:
+                    move_to_next_stage = True
+                    clean_response = raw_response.replace("[[NEXT]]", "").strip()
+
+                # Stage 5 (Call to Action) 완료 시 Finish Code 추가
+                if st.session_state.current_step == 5 and move_to_next_stage:
+                    clean_response += f"\n\nYour finish code is **{st.session_state.finish_code}**."
                     st.session_state.simulation_complete = True
+                
+                st.markdown(clean_response)
+                st.session_state.messages.append({"role": "assistant", "content": clean_response})
 
-                st.markdown(response_text)
-                st.session_state.messages.append({"role": "assistant", "content": response_text})
+                # 태그가 발견되었을 때만 Stage 숫자 증가
+                if move_to_next_stage and not st.session_state.simulation_complete:
+                    st.session_state.current_step += 1
+                    # 디버깅: print(f"Moved to Step {st.session_state.current_step}")
 
-                # Update step for next turn
-                st.session_state.current_step = next_step
-
-            # 4. Save to DB if complete
+            # 4. Save Logic
             if st.session_state.simulation_complete and not st.session_state.data_saved:
                 self.db.save_full_conversation(
                     st.session_state.finish_code,
                     st.session_state.messages
                 )
                 st.session_state.data_saved = True
-
-# ==========================================
-# EXECUTION
-# ==========================================
 
 if __name__ == "__main__":
     app = SimulationApp()
