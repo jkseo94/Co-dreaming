@@ -12,7 +12,7 @@ from openai import OpenAI
 from supabase import create_client
 from datetime import datetime
 from enum import IntEnum
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 import random
 import time
