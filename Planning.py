@@ -1,3 +1,12 @@
+"""
+Retirement Simulation Chatbot
+A Streamlit application that guides users through a structured conversation
+about retirement planning using AI-powered dialogue.
+
+Author: Refactored Version
+Date: 2026-01-22
+"""
+
 import streamlit as st
 from openai import OpenAI
 from supabase import create_client
@@ -92,7 +101,8 @@ Stage 5 — Call to Action (Do not show this title):
  Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?\n\n"
 - **Step 5: Final Goodbye.
  1. The user just responded to your saving suggestion. Respond positively.
- 2. Say a warm goodbye. The system appends the finish code automatically.
+ 2. Say a warm goodbye. 
+ 3. Provide randomly generated finish code to users.
 
 Important Guidelines:
 - Ensure meaningful engagement at each stage before progressing
@@ -142,9 +152,8 @@ class ConversationState:
     
     def advance_stage(self):
         """Move to next stage and reset stage-specific counters."""
-        if self.stage < Stage.COMPLETE:
-            self.stage = Stage(self.stage + 1)
-            self.stage_turn_count = 0
+        self.stage = Stage(self.stage + 1)
+        self.stage_turn_count = 0
         
     def can_advance_from_stage_2(self) -> bool:
         """Check if Stage 2 (Small Talk) requirements are met."""
@@ -223,12 +232,23 @@ class DatabaseService:
                 .eq("finish_code", code)\
                 .execute()
             return len(result.data) == 0
-        except Exception:
-            return True # Default to true if check fails
-            
+        except Exception as error:
+            st.warning(f"⚠️ Could not verify finish code uniqueness: {error}")
+            return True  # Proceed anyway
+    
     def save_conversation(self, finish_code: str, messages: List[Message]) -> bool:
-        """Save full conversation to database."""
+        """
+        Save the complete conversation to database.
+        
+        Args:
+            finish_code: Unique identifier for this conversation
+            messages: List of Message objects
+            
+        Returns:
+            True if successful, False otherwise
+        """
         try:
+            # Convert messages to serializable format
             messages_data = [msg.to_dict() for msg in messages]
             
             data = {
@@ -262,7 +282,18 @@ class AIService:
         current_stage: Stage,
         state: ConversationState
     ) -> Optional[str]:
-        """Generate AI response with retry logic."""
+        """
+        Generate AI response with retry logic.
+        
+        Args:
+            messages: Conversation history
+            current_stage: Current stage of conversation
+            state: Current conversation state for context
+            
+        Returns:
+            AI response string or None if failed
+        """
+        # Build context-aware system message
         stage_context = self._build_stage_context(current_stage, state)
         
         api_messages = [
@@ -270,24 +301,30 @@ class AIService:
             {"role": "system", "content": stage_context}
         ]
         
+        # Add conversation history (last 10 messages for context window management)
         for msg in messages[-10:]:
             api_messages.append({
                 "role": msg.role,
                 "content": msg.content
             })
         
+        # Retry logic
         for attempt in range(MAX_RETRIES):
             try:
                 response = self.client.chat.completions.create(
                     model="gpt-4-turbo-preview",
                     messages=api_messages,
                     temperature=0.7,
-                    max_tokens=150
+                    max_tokens=150  # Enforce brevity
                 )
                 
                 response_text = response.choices[0].message.content.strip()
+                
+                # Validate response is not empty
                 if not response_text:
+                    st.warning("⚠️ AI generated empty response, retrying...")
                     continue
+                    
                 return response_text
                 
             except Exception as error:
@@ -295,8 +332,9 @@ class AIService:
                     time.sleep(RETRY_DELAY * (attempt + 1))
                     continue
                 else:
-                    st.error(f"❌ AI service error: {error}")
+                    st.error(f"❌ AI service error after {MAX_RETRIES} attempts: {error}")
                     return None
+        
         return None
     
     @staticmethod
@@ -308,8 +346,17 @@ class AIService:
             covered = ", ".join(state.small_talk_topics_covered) if state.small_talk_topics_covered else "none"
             context_parts.append(f"Topics covered: {covered}")
             context_parts.append("You must ask about: age, gender, and family members (one question at a time)")
+            
+        elif stage == Stage.SIMULATION:
+            context_parts.append("Do not proceed until you receive this")
+            
         elif stage == Stage.PRE_EXPERIENCE:
-            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns")
+            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns in this stage")
+            if state.stage_4_turns < 5:
+                context_parts.append("Continue asking detailed follow-up questions about their execution details")
+            else:
+                context_parts.append("You have completed 5 turns. You may wrap up this stage if sufficient detail gathered")
+                
         elif stage == Stage.CALL_TO_ACTION:
             context_parts.append("Provide recap, ask about feelings, give call to action, then final message")
         
@@ -350,6 +397,8 @@ class SimulationApp:
             code = str(random.randint(FINISH_CODE_MIN, FINISH_CODE_MAX))
             if self.db.is_finish_code_unique(code):
                 return code
+        
+        # Fallback: use timestamp-based code
         return str(int(time.time() * 1000) % 100000)
     
     def run(self):
@@ -358,11 +407,16 @@ class SimulationApp:
         self._handle_initial_message()
         self._render_chat_history()
         self._handle_user_input()
-        self._save_data_if_complete()
     
     def _render_ui(self):
         """Render page configuration and styling."""
-        st.set_page_config(page_title="Saving for the Future", page_icon="💰", layout="centered")
+        st.set_page_config(
+            page_title="Saving for the Future",
+            page_icon="💰",
+            layout="centered"
+        )
+        
+        # Hide Streamlit branding
         st.markdown("""
             <style>
             #MainMenu {visibility: hidden;}
@@ -371,6 +425,7 @@ class SimulationApp:
             .stChatMessage {padding: 1rem;}
             </style>
          """, unsafe_allow_html=True)
+        
         st.title("💰 Saving for the Future")
     
     def _handle_initial_message(self):
@@ -397,11 +452,13 @@ class SimulationApp:
     
     def _handle_user_input(self):
         """Process user input and generate response."""
+        # Show finish code if simulation complete
         if st.session_state.simulation_complete:
             st.success(f"✅ Session completed! Your finish code: **{st.session_state.finish_code}**")
             st.info("Please save this code and return to the survey.")
             return
         
+        # Chat input
         user_input = st.chat_input("Type your message here...")
         if not user_input:
             return
@@ -409,13 +466,14 @@ class SimulationApp:
         # Display user message
         user_message = Message(role="user", content=user_input)
         st.session_state.messages.append(user_message)
+        
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
         
-        # Update state
+        # Update state based on user input
         self._process_user_input(user_input)
         
-        # Generate response
+        # Generate and display assistant response
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Thinking..."):
                 response_text = self.ai.generate_response(
@@ -425,24 +483,25 @@ class SimulationApp:
                 )
                 
                 if not response_text:
-                    st.error("Failed to generate response.")
+                    st.error("Failed to generate response. Please try again.")
                     return
                 
-                # Check for stage progression
+                # Check if we should advance stages BEFORE appending message
                 self._check_stage_progression()
                 
-                # FIX: Check if we reached the end
-                if st.session_state.state.stage == Stage.COMPLETE:
+                # If just completed, append finish code
+                if st.session_state.state.stage == Stage.CALL_TO_ACTION and st.session_state.state.stage >=2:
                     response_text += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
                     st.session_state.simulation_complete = True
                 
                 st.markdown(response_text)
+                
+                # Save assistant message
                 assistant_message = Message(role="assistant", content=response_text)
                 st.session_state.messages.append(assistant_message)
                 st.session_state.state.advance_turn()
-
-    def _save_data_if_complete(self):
-        """Save to database if complete."""
+        
+        # Save to database if complete
         if st.session_state.simulation_complete and not st.session_state.data_saved:
             success = self.db.save_conversation(
                 st.session_state.finish_code,
@@ -450,31 +509,46 @@ class SimulationApp:
             )
             if success:
                 st.session_state.data_saved = True
-
+    
     def _process_user_input(self, user_input: str):
         """Process user input and update state accordingly."""
         state = st.session_state.state
+        
+        # Check for readiness to start (from Stage 1)
         if state.stage == Stage.INTRODUCTION:
             affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep", "let's", "lets"]
             if any(word in user_input.lower() for word in affirmative_words):
                 state.advance_stage()
+        
+        # Track topics in Stage 2
         elif state.stage == Stage.SMALL_TALK:
             state.check_user_message_for_topics(user_input)
+        
+        # Check for "I am" phrase in Stage 3
         elif state.stage == Stage.SIMULATION:
             state.check_for_i_am_phrase(user_input)
     
     def _check_stage_progression(self):
-        """Determine if stage should advance."""
+        """Determine if stage should advance based on completion criteria."""
         state = st.session_state.state
+        
         if state.stage == Stage.SMALL_TALK and state.can_advance_from_stage_2():
             state.advance_stage()
+            
         elif state.stage == Stage.SIMULATION and state.can_advance_from_stage_3():
             state.advance_stage()
+            
         elif state.stage == Stage.PRE_EXPERIENCE and state.can_advance_from_stage_4():
             state.advance_stage()
+            
         elif state.stage == Stage.CALL_TO_ACTION and state.stage_turn_count >= 2:
+            # After recap and call to action (typically 2-3 turns)
             state.advance_stage()
 
+
+# ==========================================
+# EXECUTION
+# ==========================================
 
 if __name__ == "__main__":
     app = SimulationApp()
