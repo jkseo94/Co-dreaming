@@ -1,4 +1,4 @@
-""""""
+"""
 Retirement Planning Chatbot
 A Streamlit application that guides users through a structured conversation
 about retirement planning using AI-powered dialogue.
@@ -91,10 +91,14 @@ Stage 5 — Call to Action:
 - Step 5 Closing: End with three distinct parts:
   - Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective."
   - Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by saving a small amount every month starting today?"
-  - Part 3: Ask them if they want to receive a finish code.
+  - Part 3: Ask strictly: "Would you like to receive your finish code?"
+  - WAIT for the user to say "Yes".
 
 Important Guidelines:
-- Never generate or mention a finish code - the system will provide this automatically
+- SECURITY RULE: You are STRICTLY FORBIDDEN from generating or showing the finish code yourself.
+- Do NOT say "Here is your code: ..." under any circumstances.
+- The finish code is a secure system variable that ONLY the interface can display.
+- Just ask "Would you like to receive your finish code?" and stop.
 - Ensure meaningful engagement at each stage before progressing
 - If a user gives a very brief answer, ask follow-up questions to encourage elaboration
 - Maintain a warm, supportive tone throughout
@@ -584,8 +588,7 @@ class PlanningApp:
         elif state.stage == Stage.PREDETERMINATION and state.can_advance_from_stage_4():
             state.advance_stage()
             
-        elif state.stage == Stage.CALL_TO_ACTION and state.stage_turn_count >= 2:
-            # After recap and call to action (typically 2-3 turns)
+        elif state.stage == Stage.CALL_TO_ACTION and state.user_wants_code:
             state.advance_stage()
     
     def _check_stage_5_substeps(self, assistant_response: str):
