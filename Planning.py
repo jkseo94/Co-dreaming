@@ -17,20 +17,14 @@ class Stage(IntEnum):
     INITIAL = 0
     INTRODUCTION = 1
     SMALL_TALK = 2
-    PLANNING = 3        
-    PREDETERMINATION = 4 
-    CALL_TO_ACTION = 5   
+    PLANNING = 3
+    PREDETERMINATION = 4
+    CALL_TO_ACTION = 5
     COMPLETE = 6
-
-class Stage5SubState(IntEnum):
-    READY_FOR_SUMMARY = 0
-    WAITING_FOR_FEELING = 1
-    READY_FOR_INVESTMENT_PROMPT = 2  # [수정] 저축 권유 멘트 준비
-    WAITING_FOR_INVESTMENT_RESPONSE = 3 # [수정] 유저의 저축 다짐 대기
-    READY_FOR_FINAL_CODE = 4 # [수정] 마지막 반응 및 코드 발급
 
 FINISH_CODE_MIN = 10000
 FINISH_CODE_MAX = 99999
+MAX_RETRIES = 3
 
 SYSTEM_PROMPT = """
 Role: You are an AI agent designed to help users identify and organize future plans needed to arrive at a financially prepared retirement. Your ultimate purpose is to help users predetermine a course of action aimed at achieving some goals and decision-making in intertemporal choices, such as saving.
@@ -89,18 +83,17 @@ Stage 5 — Call to Action (Do not show this title):
 - FIRST, warmly acknowledge.
 - THEN, smoothly transition using a bridge.
 - **Step 4: Closing.** End on a hopeful note
- - You must output exactly three distinct parts.
+ - You must output exactly two distinct parts.
  Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective.\n\n"
  Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?\n\n"
- Part 3: Ask them if they want to receive a finish code.
-
     
 Important Guidelines:
-- Never generate or mention a finish code - the system will provide this automatically
+- Do not generate the numeric code - the system will provide finish code automatically
 - Ensure meaningful engagement at each stage before progressing
 - If a user gives a very brief answer, ask follow-up questions to encourage elaboration
 - Maintain a warm, supportive tone throughout
 """
+
 
 @dataclass
 class Message:
@@ -123,50 +116,61 @@ class ConversationState:
     def __init__(self):
         self.stage: Stage = Stage.INITIAL
         self.turn_count: int = 0
+        self.stage_turn_count: int = 0  # 현재 스테이지에서 몇 번째 말하는지 카운트
+        self.stage_4_turns: int = 0
+        self.user_provided_i_am: bool = False
         self.small_talk_topics_covered: set = set()
         
-        # Stage 4 Trackers
-        self.planning_step_number: int = 1 
-        self.step_phase: str = "ask_action" # ask_action <-> ask_detail
-        
-        # Stage 5 Trackers
-        self.stage_5_substate: Stage5SubState = Stage5SubState.READY_FOR_SUMMARY
-        self.retirement_timeframe: str = "your future retirement"
+    def advance_turn(self):
+        self.turn_count += 1
+        self.stage_turn_count += 1
+        if self.stage == Stage.PRE_EXPERIENCE:
+            self.stage_4_turns += 1
 
+    def advance_stage(self):
+        self.stage = Stage(self.stage + 1)
+        self.stage_turn_count = 0 # 스테이지 바뀌면 턴 카운트 초기화
+    
     def check_user_message_for_topics(self, message: str):
         msg = message.lower()
         if any(w in msg for w in ["year", "old", "age"]) or re.search(r'\b\d{1,2}\b', msg):
             self.small_talk_topics_covered.add("age")
-        if any(w in msg for w in ["male", "female", "man", "woman", "gender", "he", "she"]):
+        if any(w in msg for w in ["male", "female", "man", "woman", "gender"]) or "non-binary" in msg:
             self.small_talk_topics_covered.add("gender")
-        if any(w in msg for w in ["family", "member", "alone", "single", "married", "child"]):
+        if any(w in msg for w in ["family", "member", "alone", "single", "child"]):
             self.small_talk_topics_covered.add("family")
         if any(w in msg for w in ["retire", "work", "stop"]) or re.search(r'\b\d{2}\b', msg):
             self.small_talk_topics_covered.add("retirement_age")
+    
+    def check_for_i_am_phrase(self, message: str) -> bool:
+        if re.search(r'\bI\s+am\b', message, re.IGNORECASE):
+            self.user_provided_i_am = True
+            return True
+        return False
+
+# ==========================================
+# SERVICES
+# ==========================================
 
 class DatabaseService:
     def __init__(self):
         self._validate_secrets()
         try:
-            self.supabase = create_client(
-                st.secrets["SUPABASE_URL"],
-                st.secrets["SUPABASE_SERVICE_KEY"]
-            )
-        except Exception as error:
-            st.error(f"❌ Database connection failed: {error}")
+            self.supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SERVICE_KEY"])
+        except:
+            st.error("Database connection failed")
             st.stop()
     
     @staticmethod
     def _validate_secrets():
         required = ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "OPENAI_API_KEY"]
-        missing = [key for key in required if key not in st.secrets]
-        if missing:
-            st.error(f"❌ Missing secrets: {', '.join(missing)}")
+        if any(k not in st.secrets for k in required):
+            st.error("Missing secrets")
             st.stop()
     
     def is_finish_code_unique(self, code: str) -> bool:
         try:
-            result = self.supabase.table("full_conversations_planning").select("finish_code").eq("finish_code", code).execute()
+            result = self.supabase.table("full_conversations").select("finish_code").eq("finish_code", code).execute()
             return len(result.data) == 0
         except:
             return True
@@ -178,237 +182,174 @@ class DatabaseService:
                 "full_conversation": [msg.to_dict() for msg in messages],
                 "finished_at": datetime.utcnow().isoformat()
             }
-            self.supabase.table("full_conversations_planning").insert(data).execute()
+            self.supabase.table("full_conversations").insert(data).execute()
             return True
-        except Exception as e:
-            st.error(f"Save failed: {e}")
+        except:
             return False
 
 class AIService:
     def __init__(self):
         self.client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     
-    def generate_response(self, messages: List[Message], state: ConversationState) -> Optional[str]:
-        context = self._build_context(state)
-        
-        api_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "system", "content": context}
-        ]
-        
+    def generate_response(self, messages: List[Message], current_stage: Stage, state: ConversationState) -> Optional[str]:
+        stage_context = self._build_stage_context(current_stage, state)
+        api_messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "system", "content": stage_context}]
         for msg in messages[-10:]:
             api_messages.append({"role": msg.role, "content": msg.content})
-            
+        
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=api_messages,
-                temperature=0.7,
-                max_tokens=250
+                model="gpt-4-turbo-preview", messages=api_messages, temperature=0.7, max_tokens=250
             )
             return response.choices[0].message.content.strip()
-        except Exception as e:
-            st.error(f"AI Error: {e}")
+        except Exception:
             return None
-
-    def _build_context(self, state: ConversationState) -> str:
-        # --- Stage 1 ---
-        if state.stage == Stage.INTRODUCTION:
-            return "Current Task: Wait for user readiness. Transition to asking Age."
-
-        # --- Stage 2 ---
-        elif state.stage == Stage.SMALL_TALK:
-            topics = state.small_talk_topics_covered
-            remaining = []
-            if "age" not in topics: remaining.append("Age")
-            if "gender" not in topics: remaining.append("Gender")
-            if "family" not in topics: remaining.append("Family size")
-            if "retirement_age" not in topics: remaining.append("Expected retirement age")
-            
-            if not remaining:
-                return "Current Task: Transition to Planning. Ask: 'What are the steps to retire in a financially prepared state through years of saving? I’d like you to think about three main steps. What is the first step?'"
-            else:
-                return f"Current Task: Ask about {remaining[0]}. Ask ONE question only."
-
-        # --- Stage 3 ---
-        elif state.stage == Stage.PLANNING:
-             return "Current Task: Ask for specific execution details (How, When, Where) for the first step."
-
-        # --- Stage 4 (Ping Pong) ---
-        elif state.stage == Stage.PREDETERMINATION:
-            step = state.planning_step_number
-            phase = state.step_phase
-            
-            if phase == "ask_detail":
-                return f"Current Task: User just provided Step {step}. Ask for specific execution details (How, When, Where) for this step."
-            elif phase == "ask_action":
-                if step == 2:
-                    return "Current Task: User provided details for Step 1. Now ask for the Second Step."
-                elif step == 3:
-                    return "Current Task: User provided details for Step 2. Now ask for the Third (and final) Step."
+    
+    @staticmethod
+    def _build_stage_context(stage: Stage, state: ConversationState) -> str:
+        context_parts = [f"Current Stage: {stage.name}"]
         
-        # --- Stage 5 (Strict Scripting) ---
-        elif state.stage == Stage.CALL_TO_ACTION:
-            sub = state.stage_5_substate
+        if stage == Stage.SMALL_TALK:
+            covered = ", ".join(state.small_talk_topics_covered) if state.small_talk_topics_covered else "none"
+            context_parts.append(f"Topics covered: {covered}. Ask about remaining: age, gender, family (one by one).")
             
-            if sub == Stage5SubState.READY_FOR_SUMMARY:
-                return f"""
-                Current Task: Synthesis.
-                1. Summarize the user's plan.
-                2. Ask: "How does thinking about this future plan make you feel?"
-                """
+        elif stage == Stage.SIMULATION:
+            context_parts.append("CRITICAL: User must respond with 'I am...' describing a future event. Wait for this.")
             
-            elif sub == Stage5SubState.READY_FOR_INVESTMENT_PROMPT:
-                # [수정] 저축 권유 단계 (코드 질문 X)
+        elif stage == Stage.PRE_EXPERIENCE:
+            context_parts.append(f"Turn {state.stage_4_turns + 1} of min 5. Ask detailed sensory questions (sights, sounds, people).")
+                
+        elif stage == Stage.CALL_TO_ACTION:
+            # [핵심] 턴 수에 따라 AI가 할 말을 기계적으로 지정 (Turn-based Logic)
+            turn = state.stage_turn_count
+            
+            if turn == 0:
                 return """
-                Current Task: Acknowledge & Invest Prompt.
+                Task: Synthesis & Feeling Check.
+                1. Summarize user's future event vividly.
+                2. Ask: "How does thinking about this future make you feel?"
+                """
+            elif turn == 1:
+                return """
+                Task: Investment Prompt.
                 1. Acknowledge the user's feeling warmly.
-                2. Say: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective."
-                3. Say: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?"
-                4. STOP here. Wait for the user's response.
+                2. Say: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?"
                 """
-            
-            elif sub == Stage5SubState.READY_FOR_FINAL_CODE:
-                # [수정] 마지막 인사 (시스템이 코드를 붙임)
+            else:
                 return """
-                Current Task: Final Goodbye.
-                1. The user just responded to your suggestion about saving (e.g., 'Okay', 'I will').
-                2. Respond positively to their commitment.
-                3. Say a brief goodbye. 
-                (Do NOT generate the code yourself. The system will add it.)
+                Task: Final Goodbye.
+                1. Respond positively to the user's answer.
+                2. Say goodbye. (System will append the code).
                 """
+        
+        return " | ".join(context_parts)
 
-        return "Continue conversation."
+# ==========================================
+# APPLICATION CONTROLLER
+# ==========================================
 
-class PlanningApp:
+class SimulationApp:
     def __init__(self):
         self.db = DatabaseService()
         self.ai = AIService()
         self._init_session()
-        
+    
     def _init_session(self):
         if "messages" not in st.session_state:
             st.session_state.messages = []
             st.session_state.state = ConversationState()
             st.session_state.finish_code = self._generate_code()
-            st.session_state.completed = False
+            st.session_state.simulation_complete = False
             
     def _generate_code(self):
         while True:
             code = str(random.randint(FINISH_CODE_MIN, FINISH_CODE_MAX))
             if self.db.is_finish_code_unique(code): return code
-
+    
     def run(self):
         self._render_ui()
-        self._handle_initial()
-        self._render_history()
-        self._handle_input()
-        
+        self._handle_initial_message()
+        self._render_chat_history()
+        self._handle_user_input()
+    
     def _render_ui(self):
-        st.set_page_config(page_title="Future Planning", page_icon="💰")
+        st.set_page_config(page_title="Future Simulation", page_icon="🧘", layout="centered")
         st.markdown("<style>#MainMenu, footer, header {visibility: hidden;}</style>", unsafe_allow_html=True)
-        st.title("💰 Saving for the Future")
-        
-    def _handle_initial(self):
+        st.title("🧘 Future Simulation")
+    
+    def _handle_initial_message(self):
         if not st.session_state.messages:
-            intro = "Hello! Thank you for joining. I’m here to be your thinking partner for a quick session on your life after your main career. Ready to look ahead?"
-            self._add_message("assistant", intro)
+            msg = "Hello! I’m here to help you simulate your future retirement. Ready to look ahead?"
+            st.session_state.messages.append(Message(role="assistant", content=msg))
             st.session_state.state.stage = Stage.INTRODUCTION
-
-    def _add_message(self, role, content):
-        st.session_state.messages.append(Message(role=role, content=content))
-        
-    def _render_history(self):
+    
+    def _render_chat_history(self):
         for msg in st.session_state.messages:
             with st.chat_message(msg.role, avatar="🤖" if msg.role == "assistant" else "👤"):
                 st.markdown(msg.content)
-                
-    def _handle_input(self):
-        if st.session_state.completed:
-            st.success(f"✅ Planning complete! Code: **{st.session_state.finish_code}**")
+    
+    def _handle_user_input(self):
+        if st.session_state.simulation_complete:
+            st.success(f"✅ Simulation complete! Code: **{st.session_state.finish_code}**")
             return
-
-        user_input = st.chat_input("Type your message...")
+        
+        user_input = st.chat_input("Type here...")
         if not user_input: return
         
-        self._add_message("user", user_input)
+        st.session_state.messages.append(Message(role="user", content=user_input))
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
-            
-        self._update_state_pre_generation(user_input)
+        
+        # 1. AI 생성 전 상태 업데이트 (Trigger)
+        self._check_stage_progression_pre_ai(user_input)
         
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Thinking..."):
-                response = self.ai.generate_response(st.session_state.messages, st.session_state.state)
+                response = self.ai.generate_response(st.session_state.messages, st.session_state.state.stage, st.session_state.state)
                 
-                # [핵심] 마지막 단계(READY_FOR_FINAL_CODE)에서 AI 응답 뒤에 코드 자동 부착
-                if st.session_state.state.stage == Stage.COMPLETE:
-                    response += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
-                    st.session_state.completed = True
+                # [핵심] 마지막 Stage의 마지막 턴(턴 2)이 끝나면 무조건 코드 부착
+                # AI가 방금 Turn 2에 해당하는 답변(작별인사)을 생성했으므로, 여기에 코드를 붙임
+                if st.session_state.state.stage == Stage.CALL_TO_ACTION and st.session_state.state.stage_turn_count >= 2:
+                    response += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue."
+                    st.session_state.simulation_complete = True
                     self.db.save_conversation(st.session_state.finish_code, st.session_state.messages)
+                    st.session_state.state.stage = Stage.COMPLETE # 완료 처리
                 
                 st.markdown(response)
-                self._add_message("assistant", response)
-        
-        self._update_state_post_generation()
+                st.session_state.messages.append(Message(role="assistant", content=response))
+                
+                # 턴 카운트 증가
+                st.session_state.state.advance_turn()
 
-    def _update_state_pre_generation(self, user_input: str):
+    def _check_stage_progression_pre_ai(self, user_input: str):
         """
-        AI가 대답하기 전에 유저의 입력을 보고 상태를 업데이트 (Trigger logic)
+        AI가 말하기 '직전'에 사용자의 입력이나 상황을 보고 스테이지를 넘길지 결정
         """
         state = st.session_state.state
         msg = user_input.lower()
         
-        if state.stage == Stage.INTRODUCTION:
-            if any(w in msg for w in ["yes", "ready", "sure", "ok", "start"]):
-                state.stage = Stage.SMALL_TALK
-                
+        # Intro -> Small Talk
+        if state.stage == Stage.INTRODUCTION and any(w in msg for w in ["yes", "ok", "ready"]):
+            state.advance_stage()
+            
+        # Small Talk -> Simulation
         elif state.stage == Stage.SMALL_TALK:
             state.check_user_message_for_topics(user_input)
             if len(state.small_talk_topics_covered) >= 4:
-                state.stage = Stage.PLANNING
-            
-        elif state.stage == Stage.PLANNING:
-            state.stage = Stage.PREDETERMINATION
-            state.planning_step_number = 1
-            state.step_phase = "ask_detail"
-            
-        elif state.stage == Stage.CALL_TO_ACTION:
-            # 유저가 감정을 말함 -> 저축 권유로 이동
-            if state.stage_5_substate == Stage5SubState.WAITING_FOR_FEELING:
-                state.stage_5_substate = Stage5SubState.READY_FOR_INVESTMENT_PROMPT
-                
-            # 유저가 저축 권유에 대답함 -> 종료 및 코드 발급으로 이동
-            elif state.stage_5_substate == Stage5SubState.WAITING_FOR_INVESTMENT_RESPONSE:
-                # [수정] 무조건 넘어감 (사용자가 No라고 해도 마무리는 해야 하므로)
-                state.stage_5_substate = Stage5SubState.READY_FOR_FINAL_CODE
-                # 여기서 COMPLETE로 바꾸지 않고, post_generation에서 바꿉니다 (AI가 마지막 인사는 해야 하니까)
-
-    def _update_state_post_generation(self):
-        """
-        AI가 대답한 후에 다음 턴을 위한 상태 설정 (Transition logic)
-        """
-        state = st.session_state.state
+                state.advance_stage()
         
-        if state.stage == Stage.PREDETERMINATION:
-            if state.step_phase == "ask_detail":
-                state.step_phase = "ask_action"
-            elif state.step_phase == "ask_action":
-                if state.planning_step_number < 3:
-                    state.planning_step_number += 1
-                    state.step_phase = "ask_detail"
-                else:
-                    state.stage = Stage.CALL_TO_ACTION
-                    state.stage_5_substate = Stage5SubState.READY_FOR_SUMMARY
-
-        elif state.stage == Stage.CALL_TO_ACTION:
-            if state.stage_5_substate == Stage5SubState.READY_FOR_SUMMARY:
-                state.stage_5_substate = Stage5SubState.WAITING_FOR_FEELING
-            elif state.stage_5_substate == Stage5SubState.READY_FOR_INVESTMENT_PROMPT:
-                state.stage_5_substate = Stage5SubState.WAITING_FOR_INVESTMENT_RESPONSE
-            elif state.stage_5_substate == Stage5SubState.READY_FOR_FINAL_CODE:
-                state.stage = Stage.COMPLETE # 다음 렌더링 때 완료 처리
+        # Simulation -> Pre-experience
+        elif state.stage == Stage.SIMULATION:
+            if state.check_for_i_am_phrase(user_input):
+                state.advance_stage()
+                
+        # Pre-experience -> Call to Action (5턴 지나면)
+        elif state.stage == Stage.PRE_EXPERIENCE and state.stage_4_turns >= 5:
+            state.advance_stage()
+            
+        # [핵심] Call to Action 내부는 자동으로 advance_turn()에 의해 턴이 올라가므로
+        # 별도의 Trigger 조건이 필요 없음. (무조건 순서대로 Turn 0 -> Turn 1 -> Turn 2 진행)
 
 if __name__ == "__main__":
-    app = PlanningApp()
+    app = SimulationApp()
     app.run()
