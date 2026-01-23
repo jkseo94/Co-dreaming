@@ -128,11 +128,26 @@ class ConversationState:
         self.stage: Stage = Stage.INITIAL
         self.turn_count: int = 0
         self.stage_turn_count: int = 0
+
+        # Stage-specific counters (kept for prompt context / analytics)
         self.stage_4_turns: int = 0
-        self.small_talk_topics_covered: set = set()
-        
-        # Simplified Stage 5 tracking
         self.call_to_action_turns: int = 0
+
+        # Stage 2 tracking
+        self.small_talk_topics_covered: set = set()
+
+        # ✅ Event-based progression (Stage 3 -> 4 -> 5)
+        # Stage 3 (Planning): require user to provide a meaningful first step
+        self.planning_step1_provided: bool = False
+        self.step1_text: str = ""
+
+        # Stage 4 (Predetermination): require both steps + execution detail (how/when/where)
+        self.active_step: int = 1  # 1 or 2, driven by assistant prompts
+        self.step2_provided: bool = False
+        self.step2_text: str = ""
+
+        self.step1_details = {"how": False, "when": False, "where": False}
+        self.step2_details = {"how": False, "when": False, "where": False}
 
     def advance_turn(self):
         """Increment turn counters."""
@@ -148,24 +163,39 @@ class ConversationState:
         self.stage = Stage(self.stage + 1)
         self.stage_turn_count = 0
 
+        # Reset / initialize stage-local state where helpful
+        if self.stage == Stage.PREDETERMINATION:
+            self.active_step = 1
+        if self.stage == Stage.CALL_TO_ACTION:
+            # Call-to-action stage uses simple count-based exit (stage_turn_count >= 2)
+            pass
+
     def can_advance_from_stage_2(self) -> bool:
         """Check if Stage 2 (Small Talk) requirements are met - need 4 topics."""
         return len(self.small_talk_topics_covered) >= 4
 
     def can_advance_from_stage_3(self) -> bool:
-        """Check if Stage 3 (Planning intro) requirements are met."""
-        # Just need to ask the opening question and get a response
-        return self.stage_turn_count >= 1
+        """Event-based: advance when user provided a meaningful first step."""
+        return self.planning_step1_provided
 
     def can_advance_from_stage_4(self) -> bool:
-        """Check if Stage 4 (Predetermination) requirements are met."""
-        # Need at least 5 turns collecting all 3 steps with execution details
-        return self.stage_4_turns >= 5
+        """Event-based: advance when both steps have execution detail (how/when/where)."""
+
+        def enough_details(d: dict) -> bool:
+            # Require at least 2 of 3 (how/when/where) to avoid getting stuck,
+            # while still enforcing specificity.
+            return sum(1 for v in d.values() if v) >= 2
+
+        return (
+            self.planning_step1_provided
+            and self.step2_provided
+            and enough_details(self.step1_details)
+            and enough_details(self.step2_details)
+        )
 
     def can_advance_from_stage_5(self) -> bool:
-        """Check if Stage 5 (Call to Action) requirements are met."""
-        # Need at least 2-3 turns: summary+feeling question, user response, closing+code question
-        return self.call_to_action_turns >= 2
+        """Count-based within Stage 5 only: after 2 assistant turns, advance to COMPLETE."""
+        return self.stage_turn_count >= 2
 
     def check_user_message_for_topics(self, message: str):
         """Extract topics from user message for stage 2."""
@@ -186,6 +216,77 @@ class ConversationState:
         # Detect retirement age responses
         if any(word in message_lower for word in ["retire", "retirement", "quit", "stop working"]) or re.search(r'\b\d{2}\b', message):
             self.small_talk_topics_covered.add("retirement_age")
+
+    # --------------------------
+    # ✅ Event detectors / recorders
+    # --------------------------
+
+    def record_planning_step1(self, user_text: str):
+        """Record Stage 3 (Planning) first-step response and mark completion if meaningful."""
+        text = (user_text or "").strip()
+        text_lower = text.lower()
+
+        # If user explicitly indicates they don't know, do not advance
+        unsure_markers = ["i don't know", "dont know", "not sure", "no idea", "idk", "모르", "잘 모르", "모르겠"]
+        if any(m in text_lower for m in unsure_markers) and len(text) < 30:
+            return
+
+        # Require minimal substance (avoid accidental advancement on 'ok', 'yes', etc.)
+        if len(text.split()) < 3 and len(text) < 20:
+            return
+
+        self.planning_step1_provided = True
+        self.step1_text = text
+
+    def check_ai_message_for_step_prompt(self, assistant_text: str):
+        """Update which step the user is likely answering next, based on assistant prompt text."""
+        if not assistant_text:
+            return
+        t = assistant_text.lower()
+
+        # If the assistant explicitly asks for the second step, switch active step to 2
+        if re.search(r"\bsecond\s+step\b", t) or "두 번째" in t or "두번째" in t:
+            self.active_step = 2
+            return
+
+        # If the assistant explicitly asks for the first step (rare in Stage 4), ensure step 1 active
+        if re.search(r"\bfirst\s+step\b", t) or "첫 번째" in t or "첫번째" in t:
+            self.active_step = 1
+
+    def record_predetermination_reply(self, user_text: str):
+        """Record Stage 4 user reply as either step definition or execution details for the active step."""
+        text = (user_text or "").strip()
+        if not text:
+            return
+        t = text.lower()
+
+        # Heuristics for execution-detail signals
+        how_markers = ["how", "plan", "use", "set up", "automate", "contribute", "save", "invest", "budget", "enroll", "increase", "track",
+                       "방법", "계획", "설정", "자동", "저축", "투자", "예산", "가입", "늘리", "기록"]
+        when_markers = ["when", "every", "weekly", "monthly", "yearly", "each", "by", "before", "after", "starting", "next", "tomorrow",
+                        "주", "월", "매", "매달", "매월", "매주", "매년", "부터", "다음", "이번", "내일"]
+        where_markers = ["where", "at", "in", "from", "bank", "app", "online", "work", "employer", "broker", "account",
+                         "에서", "은행", "앱", "온라인", "회사", "직장", "계좌", "브로커"]
+
+        def has_any(markers):
+            return any(m in t for m in markers)
+
+        # Step identification: capture a second step when it is requested or explicitly mentioned
+        explicit_second = bool(re.search(r"\bsecond\s+step\b", t)) or ("두 번째" in t) or ("두번째" in t)
+        if (self.active_step == 2 or explicit_second) and not self.step2_provided:
+            if len(text.split()) >= 3:
+                self.step2_provided = True
+                self.step2_text = text
+
+        # Details:
+        # Details: assign to active step
+        details = self.step1_details if self.active_step == 1 else self.step2_details
+        if has_any(how_markers) or len(text.split()) >= 6:
+            details["how"] = True
+        if has_any(when_markers) or re.search(r"\b\d{1,4}\b", text):
+            details["when"] = True
+        if has_any(where_markers):
+            details["where"] = True
 
 
 # ==========================================
@@ -356,14 +457,13 @@ class AIService:
                 context_parts.append("You completed 5+ turns. Verify both steps have details before moving to Stage 5")
 
         elif stage == Stage.CALL_TO_ACTION:
-            context_parts.append(f"Call to Action stage")
-            if not state.asked_feeling_question:
-                context_parts.append("Step 1: Provide synthesis paragraph + ask 'How does thinking about this future plan make you feel?'")
-            elif not state.user_responded_to_feeling:
-                context_parts.append("Step 2: Wait for user to respond with their feeling")
+            context_parts.append(f"Call to Action turn {state.call_to_action_turns + 1}")
+            if state.call_to_action_turns == 0:
+                context_parts.append("Provide synthesis paragraph + ask 'How does thinking about this future plan make you feel?'")
+            elif state.call_to_action_turns == 1:
+                context_parts.append("User responded with feeling. Acknowledge + provide 3-part closing + ask for finish code")
             else:
-                context_parts.append("Step 3: Acknowledge feeling warmly + provide 3-part closing + ask if they want finish code")
-                context_parts.append("After user confirms, conversation will complete")
+                context_parts.append("User should be confirming code request. Conversation should complete soon")
 
         return " | ".join(context_parts)
 
@@ -498,10 +598,11 @@ class PlanningApp:
                     st.error("Failed to generate response. Please try again.")
                     return
                 
-                # Check if AI asked feeling question in Stage 5
-                if st.session_state.state.stage == Stage.CALL_TO_ACTION:
-                    st.session_state.state.check_ai_message_for_feeling_question(response_text)
-                
+                # Update state based on the assistant's prompt (used for Stage 4 step tracking)
+                state = st.session_state.state
+                if state.stage == Stage.PREDETERMINATION:
+                    state.check_ai_message_for_step_prompt(response_text)
+
                 # Check if we should advance stages BEFORE appending message
                 self._check_stage_progression()
                 
@@ -528,39 +629,49 @@ class PlanningApp:
 
     def _process_user_input(self, user_input: str):
         """Process user input and update state accordingly."""
-        state = st.session_state.state
+        state: ConversationState = st.session_state.state
+        user_text = user_input or ""
+        user_lower = user_text.lower()
 
-        # Check for readiness to start (from Stage 1)
+        # Stage 1: readiness gate
         if state.stage == Stage.INTRODUCTION:
-            affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep", "let's", "lets", "go"]
-            if any(word in user_input.lower() for word in affirmative_words):
+            affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep", "let's", "lets", "go", "네", "예", "응", "좋아", "시작"]
+            if any(word in user_lower for word in affirmative_words):
                 state.advance_stage()
+            return
 
-        # Track topics in Stage 2
-        elif state.stage == Stage.SMALL_TALK:
-            state.check_user_message_for_topics(user_input)
-        
-        # Track if user responded to feeling question in Stage 5
-        elif state.stage == Stage.CALL_TO_ACTION:
-            if state.asked_feeling_question and not state.user_responded_to_feeling:
-                # User is responding to the feeling question
-                state.user_responded_to_feeling = True
+        # Stage 2: small talk topic tracking (age/gender/family/retirement age)
+        if state.stage == Stage.SMALL_TALK:
+            state.check_user_message_for_topics(user_text)
+            return
+
+        # Stage 3 -> 4 (event-based): user provides a meaningful first step
+        if state.stage == Stage.PLANNING:
+            state.record_planning_step1(user_text)
+            if state.can_advance_from_stage_3():
+                state.advance_stage()  # -> PREDETERMINATION
+            return
+
+        # Stage 4 -> 5 (event-based): both steps + execution detail captured
+        if state.stage == Stage.PREDETERMINATION:
+            state.record_predetermination_reply(user_text)
+            if state.can_advance_from_stage_4():
+                state.advance_stage()  # -> CALL_TO_ACTION
+            return
 
     def _check_stage_progression(self):
         """Determine if stage should advance based on completion criteria."""
-        state = st.session_state.state
+        state: ConversationState = st.session_state.state
 
+        # Stage 2 -> 3: topic coverage (still fine as count/topic-based)
         if state.stage == Stage.SMALL_TALK and state.can_advance_from_stage_2():
             state.advance_stage()
+            return
 
-        elif state.stage == Stage.PLANNING and state.can_advance_from_stage_3():
+        # Stage 5 -> 6: keep count-based exit within Stage 5 only
+        if state.stage == Stage.CALL_TO_ACTION and state.can_advance_from_stage_5():
             state.advance_stage()
-
-        elif state.stage == Stage.PREDETERMINATION and state.can_advance_from_stage_4():
-            state.advance_stage()
-
-        elif state.stage == Stage.CALL_TO_ACTION and state.can_advance_from_stage_5():
-            state.advance_stage()
+            return
 
 
 # ==========================================
