@@ -293,38 +293,41 @@ class AIService:
             {"role": "system", "content": stage_context}
         ]
 
-        # Add conversation history (last 10 messages for context window management)
-        for msg in messages[-10:]:
+        # Add conversation history (last 8 messages for faster response)
+        for msg in messages[-8:]:
             api_messages.append({
                 "role": msg.role,
                 "content": msg.content
             })
 
-        # Retry logic
+        # Retry logic with shorter delays
         for attempt in range(MAX_RETRIES):
             try:
                 response = self.client.chat.completions.create(
                     model="gpt-4-turbo-preview",
                     messages=api_messages,
                     temperature=0.7,
-                    max_tokens=200  # Slightly higher for planning details
+                    max_tokens=200,  # Slightly higher for planning details
+                    stream=False  # Set to True for streaming responses
                 )
 
                 response_text = response.choices[0].message.content.strip()
 
                 # Validate response is not empty
                 if not response_text:
-                    st.warning("⚠️ AI generated empty response, retrying...")
-                    continue
+                    if attempt < MAX_RETRIES - 1:
+                        continue
+                    st.warning("⚠️ AI generated empty response")
+                    return None
 
                 return response_text
 
             except Exception as error:
                 if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (attempt + 1))
+                    time.sleep(0.5 * (attempt + 1))  # Shorter delays
                     continue
                 else:
-                    st.error(f"❌ AI service error after {MAX_RETRIES} attempts: {error}")
+                    st.error(f"❌ AI service error: {error}")
                     return None
 
         return None
@@ -380,7 +383,7 @@ class PlanningApp:
         """Initialize or restore session state."""
         defaults = {
             "messages": [],
-            "finish_code": self._generate_unique_finish_code(),
+            "finish_code": None,  # Generate only when needed
             "planning_complete": False,
             "data_saved": False,
             "state": ConversationState()
@@ -389,6 +392,10 @@ class PlanningApp:
         for key, value in defaults.items():
             if key not in st.session_state:
                 st.session_state[key] = value
+        
+        # Generate finish code only once, when first needed
+        if st.session_state.finish_code is None:
+            st.session_state.finish_code = self._generate_unique_finish_code()
 
     def _generate_unique_finish_code(self) -> str:
         """Generate a unique finish code."""
@@ -446,6 +453,8 @@ class PlanningApp:
 
     def _render_chat_history(self):
         """Display all messages in conversation."""
+        # Only render messages that haven't been rendered yet
+        # Streamlit automatically handles chat message display
         for message in st.session_state.messages:
             avatar = "🤖" if message.role == "assistant" else "👤"
             with st.chat_message(message.role, avatar=avatar):
@@ -486,20 +495,21 @@ class PlanningApp:
                 if not response_text:
                     st.error("Failed to generate response. Please try again.")
                     return
-
+                
+                # Check if we should advance stages BEFORE appending message
+                self._check_stage_progression()
+                
+                # If just completed, append finish code to response
+                if st.session_state.state.stage == Stage.COMPLETE:
+                    response_text += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
+                    st.session_state.planning_complete = True
+                
                 st.markdown(response_text)
 
                 # Save assistant message
                 assistant_message = Message(role="assistant", content=response_text)
                 st.session_state.messages.append(assistant_message)
                 st.session_state.state.advance_turn()
-
-                # Check if we should advance stages AFTER appending message
-                self._check_stage_progression()
-
-                # If just completed, show finish code
-                if st.session_state.state.stage == Stage.COMPLETE and not st.session_state.planning_complete:
-                    st.session_state.planning_complete = True
 
         # Save to database if complete
         if st.session_state.planning_complete and not st.session_state.data_saved:
@@ -509,8 +519,6 @@ class PlanningApp:
             )
             if success:
                 st.session_state.data_saved = True
-            # Force rerun to show success message
-            st.rerun()
 
     def _process_user_input(self, user_input: str):
         """Process user input and update state accordingly."""
