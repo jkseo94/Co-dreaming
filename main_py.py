@@ -86,7 +86,7 @@ Stage 4 — Pre-experience (Extended Exploration):
 Stage 5 — Call to Action (Do not show this title):
 - **Step 1: Synthesis.** Based on the details the user provided in the previous turns, write a short, vivid paragraph (3-4 sentences) summarizing their future event. 
     - You MUST follow this format strictly:
-      1. Say: "Here is a snapshot of your future:\n\n [Insert the paragraph you wrote following below format] 
+      1. Say: "Here is a snapshot of your future: [Insert the paragraph you wrote following below format] 
       2. **Start with the calculated timeframe:** - **If you calculated X in Stage 2:** Start with "**In [X] years**..." (e.g., "In 20 years...").
          - **If X was unknown:** Start with "**In your future retirement**..."
       3. Use "I am" statements and the present tense throughout (e.g., "I am sitting...", "I feel...").
@@ -97,10 +97,11 @@ Stage 5 — Call to Action (Do not show this title):
     - FIRST, warmly acknowledge (e.g., "I am so glad that vision brings you joy.").
     - THEN, smoothly transition using a bridge (e.g., "Holding onto that positive feeling is important because...").
 - **Step 4: Closing.** End on a hopeful note
-    - You must output exactly two distinct parts.
+    - You must output exactly three distinct parts.
     Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective.\n\n"
     Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?\n\n"
-    - Do not ask any questions after Part 2. Do not mention the finish code.
+    Part 3: Ask them if they want to receive a finish code.
+    
 Important Guidelines:
 - Never generate or mention a finish code - the system will provide this automatically
 - Ensure meaningful engagement at each stage before progressing
@@ -356,7 +357,7 @@ class AIService:
                 context_parts.append("You have completed 5 turns. You may wrap up this stage if sufficient detail gathered")
                 
         elif stage == Stage.CALL_TO_ACTION:
-            context_parts.append("Provide recap + ask feeling question. After user shares feeling: acknowledge + output EXACTLY the 2-part closing. Do NOT ask about or mention any finish code.")
+            context_parts.append("Provide recap, ask about feelings, give call to action, then final message")
         
         return " | ".join(context_parts)
 
@@ -536,10 +537,10 @@ class SimulationApp:
         elif state.stage == Stage.SIMULATION and state.can_advance_from_stage_3():
             state.advance_stage()
             
-        elif state.stage == Stage.PRE_EXPERIENCE and (state.stage_4_turns + 1) >= 5:
+        elif state.stage == Stage.PRE_EXPERIENCE and state.can_advance_from_stage_4():
             state.advance_stage()
             
-        elif state.stage == Stage.CALL_TO_ACTION and (state.stage_turn_count + 1) >= 2:
+        elif state.stage == Stage.CALL_TO_ACTION and state.stage_turn_count >= 2:
             # After recap and call to action (typically 2-3 turns)
             state.advance_stage()
 
