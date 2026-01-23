@@ -80,14 +80,15 @@ Stage 4 — Pre-experience (Extended Exploration):
 - Ask about: where they are, who they are with, what they are hearing, and what they are seeing at that future event.
 - Break down questions into separate responses. Do not ask everything at once.
 - Continue asking follow-up questions to actively facilitate users mentally pre-experiencing the future event.
-- This stage should last 5-7 conversational turns (your responses).
-- Only proceed to Stage 5 after sufficient detail has been gathered.
+- Continue asking follow-up questions until you have covered all four topics (where, who, what they are hearing, what they are seeing).
+- Only proceed to Stage 5 after all four topics have been covered.
 
 Stage 5 — Call to Action (Do not show this title):
 - **Step 1: Synthesis.** Based on the details the user provided in the previous turns, write a short, vivid paragraph (3-4 sentences) summarizing their future event. 
     - You MUST follow this format strictly:
       1. Say: "Here is a snapshot of your future: [Insert the paragraph you wrote following below format] 
-      2. **Start with the calculated timeframe:** - **If you calculated X in Stage 2:** Start with "**In [X] years**..." (e.g., "In 20 years...").
+      2. **Start with the calculated timeframe:** 
+         - **If you calculated X in Stage 2:** Start with "**In [X] years**..." (e.g., "In 20 years...").
          - **If X was unknown:** Start with "**In your future retirement**..."
       3. Use "I am" statements and the present tense throughout (e.g., "I am sitting...", "I feel...").
       4. Include the sensory details (who, where, what, feelings) the user mentioned.
@@ -96,12 +97,11 @@ Stage 5 — Call to Action (Do not show this title):
 - **Step 3: Validation.** When the user responds with their feeling (e.g., "happy", "excited"):
     - FIRST, warmly acknowledge (e.g., "I am so glad that vision brings you joy.").
     - THEN, smoothly transition using a bridge (e.g., "Holding onto that positive feeling is important because...").
-- **Step 4: Closing.** End on a hopeful note
-    - You must output exactly three distinct parts.
+- **Step 4: Closing.** End on a hopeful note.
+    - You must output exactly two distinct parts.
     Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective.\n\n"
     Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?\n\n"
-    Part 3: Ask them if they want to receive a finish code.
-    
+
 Important Guidelines:
 - Never generate or mention a finish code - the system will provide this automatically
 - Ensure meaningful engagement at each stage before progressing
@@ -140,6 +140,10 @@ class ConversationState:
         self.questions_asked: List[str] = []
         self.user_provided_i_am: bool = False
         self.small_talk_topics_covered: set = set()
+
+        # Stage 4 (Pre-experience) event-based tracking
+        self.pre_experience_topics_covered: set = set()
+        self.current_pre_experience_topic: Optional[str] = None
         
     def advance_turn(self):
         """Increment turn counters."""
@@ -163,7 +167,8 @@ class ConversationState:
     
     def can_advance_from_stage_4(self) -> bool:
         """Check if Stage 4 (Pre-experience) requirements are met."""
-        return self.stage_4_turns >= 5
+        # Event-based: proceed only after all required sensory topics have been covered
+        return len(self.pre_experience_topics_covered) >= 4
     
     def check_user_message_for_topics(self, message: str):
         """Extract topics from user message for stage 2."""
@@ -192,6 +197,32 @@ class ConversationState:
             self.user_provided_i_am = True
             return True
         return False
+
+    def check_ai_message_for_pre_experience_topic(self, assistant_text: str):
+        """Infer which Stage 4 sensory topic the assistant is currently asking about."""
+        if not assistant_text:
+            return
+
+        t = assistant_text.lower()
+
+        # Map common prompts to a single canonical topic key
+        if re.search(r"\bwhere\b", t) or "where are you" in t:
+            self.current_pre_experience_topic = "where"
+        elif re.search(r"\bwho\b", t) or "who are you with" in t:
+            self.current_pre_experience_topic = "who"
+        elif re.search(r"\bhear\b", t) or "what are you hearing" in t or "what do you hear" in t:
+            self.current_pre_experience_topic = "hearing"
+        elif re.search(r"\bsee\b", t) or "what are you seeing" in t or "what do you see" in t:
+            self.current_pre_experience_topic = "seeing"
+
+    def mark_pre_experience_topic_answered(self, user_text: str):
+        """Mark the currently asked Stage 4 topic as covered after the user's reply."""
+        if not user_text or not self.current_pre_experience_topic:
+            return
+
+        # Any non-empty user reply is treated as answering the current topic
+        self.pre_experience_topics_covered.add(self.current_pre_experience_topic)
+        self.current_pre_experience_topic = None
 
 
 # ==========================================
@@ -339,26 +370,32 @@ class AIService:
     def _build_stage_context(stage: Stage, state: ConversationState) -> str:
         """Build stage-specific context for AI."""
         context_parts = [f"Current Stage: {stage.name} (Stage {stage.value})"]
-        
+
         if stage == Stage.SMALL_TALK:
             covered = ", ".join(state.small_talk_topics_covered) if state.small_talk_topics_covered else "none"
             context_parts.append(f"Topics covered: {covered}")
-            context_parts.append("You must ask about: age, gender, and family members (one question at a time)")
-            
+            context_parts.append("You must ask about: age, gender, family members, and retirement age (one question at a time)")
+
         elif stage == Stage.SIMULATION:
             context_parts.append("CRITICAL: User must respond with an 'I am' statement describing a future event")
             context_parts.append("Do not proceed until you receive this")
-            
+
         elif stage == Stage.PRE_EXPERIENCE:
-            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns in this stage")
-            if state.stage_4_turns < 5:
-                context_parts.append("Continue asking detailed follow-up questions about their visualization")
-            else:
-                context_parts.append("You have completed 5 turns. You may wrap up this stage if sufficient detail gathered")
-                
+            covered = ", ".join(sorted(state.pre_experience_topics_covered)) if state.pre_experience_topics_covered else "none"
+            context_parts.append(f"Topics covered so far: {covered}")
+            context_parts.append("Ask about ONE topic per turn: where they are, who they are with, what they are hearing, what they are seeing")
+            context_parts.append("Continue until all four topics are covered, then you may proceed to the next stage")
+
         elif stage == Stage.CALL_TO_ACTION:
-            context_parts.append("Provide recap, ask about feelings, give call to action, then final message")
-        
+            context_parts.append(f"Call to Action turn {state.stage_turn_count + 1}")
+            context_parts.append("Do NOT mention or ask about a finish code. The system will append it automatically upon completion.")
+            if state.stage_turn_count == 0:
+                context_parts.append("Provide the snapshot paragraph, then ask: 'How does thinking about this future make you feel?' in a separate paragraph")
+            elif state.stage_turn_count == 1:
+                context_parts.append("User responded with feelings. Acknowledge warmly, then output ONLY the 2-part closing (exact wording from the system prompt)")
+            else:
+                context_parts.append("Keep the response aligned with the system prompt and remain brief")
+
         return " | ".join(context_parts)
 
 
@@ -480,25 +517,33 @@ class SimulationApp:
                     st.session_state.state.stage,
                     st.session_state.state
                 )
-                
+
                 if not response_text:
                     st.error("Failed to generate response. Please try again.")
                     return
-                
-                # Check if we should advance stages BEFORE appending message
+
+                state = st.session_state.state
+
+                # Stage 4: detect which sensory topic the assistant is asking, so the next user reply can be mapped
+                if state.stage == Stage.PRE_EXPERIENCE:
+                    state.check_ai_message_for_pre_experience_topic(response_text)
+
+                # Count this assistant message as a turn in the current stage BEFORE evaluating progression
+                state.advance_turn()
+
+                # Stage progression (Stage 5 uses stage_turn_count >= 2)
                 self._check_stage_progression()
-                
-                # If just completed, append finish code
-                if st.session_state.state.stage == Stage.COMPLETE:
+
+                # If just completed, append finish code immediately
+                if state.stage == Stage.COMPLETE:
                     response_text += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
                     st.session_state.simulation_complete = True
-                
+
                 st.markdown(response_text)
                 
                 # Save assistant message
                 assistant_message = Message(role="assistant", content=response_text)
                 st.session_state.messages.append(assistant_message)
-                st.session_state.state.advance_turn()
         
         # Save to database if complete
         if st.session_state.simulation_complete and not st.session_state.data_saved:
@@ -512,37 +557,43 @@ class SimulationApp:
     def _process_user_input(self, user_input: str):
         """Process user input and update state accordingly."""
         state = st.session_state.state
-        
-        # Check for readiness to start (from Stage 1)
+
+        # Stage 1 -> Stage 2 (readiness)
         if state.stage == Stage.INTRODUCTION:
-            affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep", "let's", "lets"]
+            affirmative_words = ["yes", "ready", "sure", "ok", "okay", "start", "yeah", "yep", "let's", "lets"]
             if any(word in user_input.lower() for word in affirmative_words):
                 state.advance_stage()
-        
-        # Track topics in Stage 2
-        elif state.stage == Stage.SMALL_TALK:
+            return
+
+        # Stage 2: track topics; advance immediately once all 4 are covered
+        if state.stage == Stage.SMALL_TALK:
             state.check_user_message_for_topics(user_input)
-        
-        # Check for "I am" phrase in Stage 3
-        elif state.stage == Stage.SIMULATION:
-            state.check_for_i_am_phrase(user_input)
-    
+            if state.can_advance_from_stage_2():
+                state.advance_stage()
+            return
+
+        # Stage 3: event-based gate on receiving an "I am" statement; advance immediately
+        if state.stage == Stage.SIMULATION:
+            if state.check_for_i_am_phrase(user_input):
+                state.advance_stage()
+            return
+
+        # Stage 4: event-based gate on covering all required sensory topics (where/who/hearing/seeing)
+        if state.stage == Stage.PRE_EXPERIENCE:
+            state.mark_pre_experience_topic_answered(user_input)
+            if state.can_advance_from_stage_4():
+                state.advance_stage()
+            return
+
+
     def _check_stage_progression(self):
         """Determine if stage should advance based on completion criteria."""
         state = st.session_state.state
-        
-        if state.stage == Stage.SMALL_TALK and state.can_advance_from_stage_2():
+
+        # Stage 5: simple turn-count based completion (two assistant messages in this stage)
+        if state.stage == Stage.CALL_TO_ACTION and state.stage_turn_count >= 2:
             state.advance_stage()
-            
-        elif state.stage == Stage.SIMULATION and state.can_advance_from_stage_3():
-            state.advance_stage()
-            
-        elif state.stage == Stage.PRE_EXPERIENCE and state.can_advance_from_stage_4():
-            state.advance_stage()
-            
-        elif state.stage == Stage.CALL_TO_ACTION and state.stage_turn_count >= 2:
-            # After recap and call to action (typically 2-3 turns)
-            state.advance_stage()
+
 
 
 # ==========================================
