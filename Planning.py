@@ -39,6 +39,9 @@ FINISH_CODE_MAX = 99999
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
+CHAT_MODEL = "gpt-4.1"
+EXTRACT_MODEL = "gpt-4.1"
+
 SYSTEM_PROMPT = """
 Role: You are an AI agent designed to help users generate simulations of future-oriented thinking that involves imaginatively placing oneself in a hypothetical scenario. Your ultimate purpose is to help users mentally pre-experience the future and decision-making in intertemporal choices, such as saving.
 
