@@ -63,7 +63,7 @@ Stage 3 — Planning:
 - Guide users to identify and organize the concrete steps needed to arrive at their future where work is optional or done on their own terms.
 - Help them construct a future plan to achieve financial security through saving—whether that means fully retiring, working fewer hours to pursue passions, or simply having the freedom to design their days exactly as they wish.
 - CRITICAL: Ask them to describe specific future plans by using the following opening questions: "What are the steps to retire in a financially prepared state through years of saving?\n\n
-I'd like you to think about three main steps to achieve that retirement. These can be big or small.\n\n 
+I'd like you to think about two main steps to achieve that retirement. These can be big or small.\n\n 
 What is the first step?"
 
 Stage 4 — Predetermination:
@@ -71,7 +71,7 @@ Stage 4 — Predetermination:
 - Ask about: specific execution details, such as how they will execute the step, when they will do it, and where it will take place.
 - Break down questions into separate responses (one step at a time). Do not ask for the full plan at once. (e.g., "What is the first step?" -> asking execution details -> "What is the second step?" …)
 - Continue asking follow-up questions to actively facilitate users mentally constructing the course of action.
-- This stage should last 5-7 conversational turns (guiding them through 3 distinct steps).
+- This stage should last 5-7 conversational turns (guiding them through 2 distinct steps with detailed follow-ups).
 - Only proceed to Stage 5 after sufficient execution detail has been gathered.
 
 Stage 5 — Call to Action (Do not show this title): 
@@ -343,16 +343,17 @@ class AIService:
             context_parts.append("You must ask about: age, gender, family members, and retirement age (one question at a time)")
 
         elif stage == Stage.PLANNING:
-            context_parts.append("Ask the opening question about three main steps to retire financially prepared")
+            context_parts.append("Ask the opening question about two main steps to retire financially prepared")
             context_parts.append("Wait for user's response about first step, then proceed to Stage 4")
 
         elif stage == Stage.PREDETERMINATION:
             context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns")
             if state.stage_4_turns < 5:
-                context_parts.append("Guide user through ALL 3 STEPS with execution details (how, when, where)")
-                context_parts.append("ONE step at a time: Step 1 + details -> Step 2 + details -> Step 3 + details")
+                context_parts.append("Guide user through BOTH 2 STEPS with execution details (how, when, where)")
+                context_parts.append("ONE step at a time: Step 1 (what) -> Step 1 details (how/when/where) -> Step 2 (what) -> Step 2 details (how/when/where)")
+                context_parts.append("Ask multiple follow-up questions per step to reach 5+ turns total")
             else:
-                context_parts.append("You completed 5+ turns. Verify all 3 steps have details before moving to Stage 5")
+                context_parts.append("You completed 5+ turns. Verify both steps have details before moving to Stage 5")
 
         elif stage == Stage.CALL_TO_ACTION:
             context_parts.append(f"Call to Action turn {state.call_to_action_turns + 1}")
