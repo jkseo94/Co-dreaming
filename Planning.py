@@ -356,13 +356,14 @@ class AIService:
                 context_parts.append("You completed 5+ turns. Verify both steps have details before moving to Stage 5")
 
         elif stage == Stage.CALL_TO_ACTION:
-            context_parts.append(f"Call to Action turn {state.call_to_action_turns + 1}")
-            if state.call_to_action_turns == 0:
-                context_parts.append("Provide synthesis paragraph + ask 'How does thinking about this future plan make you feel?'")
-            elif state.call_to_action_turns == 1:
-                context_parts.append("User responded with feeling. Acknowledge + provide 3-part closing + ask for finish code")
+            context_parts.append(f"Call to Action stage")
+            if not state.asked_feeling_question:
+                context_parts.append("Step 1: Provide synthesis paragraph + ask 'How does thinking about this future plan make you feel?'")
+            elif not state.user_responded_to_feeling:
+                context_parts.append("Step 2: Wait for user to respond with their feeling")
             else:
-                context_parts.append("User should be confirming code request. Conversation should complete soon")
+                context_parts.append("Step 3: Acknowledge feeling warmly + provide 3-part closing + ask if they want finish code")
+                context_parts.append("After user confirms, conversation will complete")
 
         return " | ".join(context_parts)
 
@@ -497,6 +498,10 @@ class PlanningApp:
                     st.error("Failed to generate response. Please try again.")
                     return
                 
+                # Check if AI asked feeling question in Stage 5
+                if st.session_state.state.stage == Stage.CALL_TO_ACTION:
+                    st.session_state.state.check_ai_message_for_feeling_question(response_text)
+                
                 # Check if we should advance stages BEFORE appending message
                 self._check_stage_progression()
                 
@@ -534,6 +539,12 @@ class PlanningApp:
         # Track topics in Stage 2
         elif state.stage == Stage.SMALL_TALK:
             state.check_user_message_for_topics(user_input)
+        
+        # Track if user responded to feeling question in Stage 5
+        elif state.stage == Stage.CALL_TO_ACTION:
+            if state.asked_feeling_question and not state.user_responded_to_feeling:
+                # User is responding to the feeling question
+                state.user_responded_to_feeling = True
 
     def _check_stage_progression(self):
         """Determine if stage should advance based on completion criteria."""
