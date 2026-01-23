@@ -347,13 +347,12 @@ class AIService:
             context_parts.append("You must ask about: age, gender, and family members (one question at a time)")
             
         elif stage == Stage.SIMULATION:
-            context_parts.append("CRITICAL: User must respond with an 'I am' statement describing a future event")
             context_parts.append("Do not proceed until you receive this")
             
         elif stage == Stage.PRE_EXPERIENCE:
             context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns in this stage")
             if state.stage_4_turns < 5:
-                context_parts.append("Continue asking detailed follow-up questions about their visualization")
+                context_parts.append("Continue asking detailed follow-up questions about their execution details")
             else:
                 context_parts.append("You have completed 5 turns. You may wrap up this stage if sufficient detail gathered")
                 
@@ -454,7 +453,7 @@ class SimulationApp:
         """Process user input and generate response."""
         # Show finish code if simulation complete
         if st.session_state.simulation_complete:
-            st.success(f"✅ Simulation complete! Your finish code: **{st.session_state.finish_code}**")
+            st.success(f"✅ Session completed! Your finish code: **{st.session_state.finish_code}**")
             st.info("Please save this code and return to the survey.")
             return
         
