@@ -489,7 +489,7 @@ class SimulationApp:
                 self._check_stage_progression()
                 
                 # If just completed, append finish code
-                if st.session_state.state.stage == Stage.COMPLETE:
+                if st.session_state.state.stage == Stage.CALL_TO_ACTION and st.session_state.state.stage >=2:
                     response_text += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
                     st.session_state.simulation_complete = True
                 
