@@ -1,9 +1,9 @@
-"""
-Retirement Simulation Chatbot
+""""""
+Retirement Planning Chatbot
 A Streamlit application that guides users through a structured conversation
 about retirement planning using AI-powered dialogue.
 
-Author: Refactored Version
+Author: Refactored Version - Planning Condition
 Date: 2026-01-22
 """
 
@@ -13,7 +13,7 @@ from supabase import create_client
 from datetime import datetime
 from enum import IntEnum
 from typing import List, Dict, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import random
 import time
 import re
@@ -24,12 +24,12 @@ import re
 # ==========================================
 
 class Stage(IntEnum):
-    """Conversation stages for retirement simulation."""
+    """Conversation stages for retirement planning."""
     INITIAL = 0
     INTRODUCTION = 1
     SMALL_TALK = 2
-    SIMULATION = 3
-    PRE_EXPERIENCE = 4
+    PLANNING = 3
+    PREDETERMINATION = 4
     CALL_TO_ACTION = 5
     COMPLETE = 6
 
@@ -40,7 +40,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
 SYSTEM_PROMPT = """
-Role: You are an AI agent designed to help users identify and organize future plans needed to arrive at a financially prepared retirement. Your ultimate purpose is to help users predetermine a course of action aimed at achieving some goals and decision-making in intertemporal choices, such as saving.
+Role: You are an AI agent designed to help users generate simulations of future-oriented thinking that involves imaginatively placing oneself in a hypothetical scenario. Your ultimate purpose is to help users mentally pre-experience the future and decision-making in intertemporal choices, such as saving.
 
 Constraints:
 - Make sure each conversation response is less than 80 words.
@@ -51,10 +51,7 @@ Dialogue Stages:
 Follow this sequence strictly. Do not skip steps.
 
 Stage 1 — Introduction:
-- Introduce yourself as follows: "Hello! Thank you for joining.\n\n
-I’m here to be your thinking partner for a quick session on your life after your main career—whether that means traditional retirement or simply having the financial freedom to work less.\n\n
-Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers.\n\n
-Ready to look ahead?"
+- Introduce yourself as follows: "Hello! Thank you for joining. I'm here to be your thinking partner for a quick session on your life after your main career—whether that means traditional retirement or simply having the financial freedom to work less. Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers. Ready to look ahead?"
 
 Stage 2 — Small Talk:
 - Smoothly transition by letting users know you want to get to know them better.
@@ -63,48 +60,41 @@ Stage 2 — Small Talk:
   2. "How do you describe your gender?"
   3. "How many family members do you currently have?"
   4. "At what age do you expect to retire or start significantly cutting back on work?"
-- **INTERNAL LOGIC (Perform after Question 4):**
-  - **IF the user provides a number:** Calculate [Answer to Q4] minus [Answer to Q1] = X. (e.g., 65 - 30 = 35). Remember "35 years" as the timeframe for the final cue.
-  - **IF the user is unsure (e.g., "I don't know"):** Do not force a number. Simply accept it and set the timeframe as "your future retirement" for the final cue.
-  - **IF the user is already retired:** Set the timeframe as "a few years".
+- INTERNAL LOGIC (Perform after Question 4):
+  - IF the user provides a number: Calculate [Answer to Q4] minus [Answer to Q1] = X. Remember "X years" as the timeframe for the final cue.
+  - IF the user is unsure: Do not force a number. Set the timeframe as "your future retirement" for the final cue.
+  - IF the user is already retired: Set the timeframe as "a few years".
 
 Stage 3 — Planning:
 - Guide users to identify and organize the concrete steps needed to arrive at their future where work is optional or done on their own terms.
-- Help them construct a future plan to achieve financial security through saving—whether that means fully retiring, working fewer hours to pursue passions, or simply having the freedom to design their days exactly as they wish.
-- CRITICAL: Ask them to describe specific future plans by using the following opening questions: "What are the steps to retire in a financially prepared state through years of saving?\n\n
-I’d like you to think about three main steps to achieve that retirement. These can be big or small.\n\n 
-What is the first step?"
+- Help them construct a future plan to achieve financial security through saving.
+- CRITICAL: Ask them to describe specific future plans by using the following opening question: "What are the steps to retire in a financially prepared state through years of saving? I'd like you to think about three main steps to achieve that retirement. These can be big or small. What is the first step?"
+- Wait for their response about the first step before proceeding.
 
 Stage 4 — Predetermination:
-- Help users make their plans vividly with detailed and specific questions.
-- Ask about: specific execution details, such as how they will execute the step, when they will do it, and where it will take place.
-- Break down questions into separate responses (one step at a time). Do not ask for the full plan at once. (e.g., “What is the first step?” -> asking execution details -> “What is the second step?” …)
+- Help users make their plans vivid with detailed and specific questions.
+- Ask about specific execution details: how they will execute the step, when they will do it, and where it will take place.
+- Break down questions into separate responses (one step at a time). Do not ask for the full plan at once.
+- Process: Ask about Step 1 -> Get execution details -> Ask about Step 2 -> Get execution details -> Ask about Step 3 -> Get execution details
 - Continue asking follow-up questions to actively facilitate users mentally constructing the course of action.
-- This stage should last 5-7 conversational turns (guiding them through 3 distinct steps).
-- Only proceed to Stage 5 after sufficient execution detail has been gathered.
+- This stage should last 5-7 conversational turns (guiding them through 3 distinct steps with details).
+- Only proceed to Stage 5 after sufficient execution detail has been gathered for all 3 steps.
 
-Stage 5 — Call to Action (Do not show this title): 
-- **Step 1: Synthesis.** Based on the concrete steps the user provided in the previous turns, write a short, structured paragraph (3-4 sentences) summarizing their future plan. 
-- You MUST follow this format strictly: 
- 1. Say: "Here is the action plan for your future: [Insert the paragraph you wrote following below format]" 
- 2. **Start with the calculated timeframe:** - **If you calculated X in Stage 2:** Start with "**To retire prepared in [X] years**..." (e.g., "To retire prepared in 20 years..."). - **If X was unknown:** Start with "**To retire prepared in the future**..." 
- 3. Use "I will" statements to denote determination (e.g., "First, I will...", "Then, I will..."). 
- 4. Include the specific execution details (how, when, where) the user planned for each step. 
-- **Step 2: Presentation & Validation.** Present this text to the user naturally. 
-- Say: "How does thinking about this future plan make you feel?" in a separate paragraph. 
-- **Step 3: Validation.** When the user responds with their feeling: 
-- FIRST, warmly acknowledge.
-- THEN, smoothly transition using a bridge.
-- **Step 4: Closing.** End on a hopeful note
- - You must output exactly two distinct parts.
- Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective.\n\n"
- Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by **saving a small amount every month starting today**?\n\n"
-- **Step 5: Final Goodbye.
- 1. The user just responded to your saving suggestion. Respond positively.
- 2. Say a warm goodbye. 
- 3. Provide randomly generated finish code to users.
+Stage 5 — Call to Action:
+- Step 1 Synthesis: Based on the concrete steps the user provided, write a short structured paragraph (3-4 sentences) summarizing their future plan.
+  - Start with the calculated timeframe: "To retire prepared in [X] years..." or "To retire prepared in your future..." or "To retire prepared in a few years..."
+  - Use "I will" statements to denote determination.
+  - Include the specific execution details (how, when, where) the user planned for each step.
+- Step 2 Presentation: Present this text. Say "Here is the action plan for your future:" followed by the paragraph.
+- Step 3 Validation: Ask "How does thinking about this future plan make you feel?" in a separate paragraph.
+- Step 4 Response: When the user responds, warmly acknowledge their feeling and transition smoothly.
+- Step 5 Closing: End with three distinct parts:
+  - Part 1: "It is not always easy to think so far ahead, but doing so is a great step toward better financial preparedness. I hope this short conversation provided you with a meaningful perspective."
+  - Part 2: "Your tomorrow is built on what you do today. Why not invest in a brighter future by saving a small amount every month starting today?"
+  - Part 3: Ask them if they want to receive a finish code.
 
 Important Guidelines:
+- Never generate or mention a finish code - the system will provide this automatically
 - Ensure meaningful engagement at each stage before progressing
 - If a user gives a very brief answer, ask follow-up questions to encourage elaboration
 - Maintain a warm, supportive tone throughout
@@ -139,15 +129,21 @@ class ConversationState:
         self.turn_count: int = 0
         self.stage_turn_count: int = 0
         self.stage_4_turns: int = 0
-        self.questions_asked: List[str] = []
-        self.user_provided_i_am: bool = False
         self.small_talk_topics_covered: set = set()
+        
+        # Stage 5 sub-steps
+        self.provided_summary: bool = False
+        self.asked_feeling: bool = False
+        self.user_responded_feeling: bool = False
+        self.provided_closing: bool = False
+        self.asked_for_code: bool = False
+        self.user_wants_code: bool = False
         
     def advance_turn(self):
         """Increment turn counters."""
         self.turn_count += 1
         self.stage_turn_count += 1
-        if self.stage == Stage.PRE_EXPERIENCE:
+        if self.stage == Stage.PREDETERMINATION:
             self.stage_4_turns += 1
     
     def advance_stage(self):
@@ -156,16 +152,41 @@ class ConversationState:
         self.stage_turn_count = 0
         
     def can_advance_from_stage_2(self) -> bool:
-        """Check if Stage 2 (Small Talk) requirements are met."""
+        """Check if Stage 2 (Small Talk) requirements are met - need 4 topics."""
         return len(self.small_talk_topics_covered) >= 4
     
     def can_advance_from_stage_3(self) -> bool:
-        """Check if Stage 3 (Simulation) requirements are met."""
-        return self.user_provided_i_am
+        """Check if Stage 3 (Planning intro) requirements are met."""
+        # Just need to ask the opening question and get a response
+        return self.stage_turn_count >= 1
     
     def can_advance_from_stage_4(self) -> bool:
-        """Check if Stage 4 (Pre-experience) requirements are met."""
+        """Check if Stage 4 (Predetermination) requirements are met."""
+        # Need at least 5 turns collecting all 3 steps with execution details
         return self.stage_4_turns >= 5
+    
+    def mark_summary_provided(self):
+        """Mark that Stage 5 summary was provided."""
+        self.provided_summary = True
+        self.asked_feeling = True  # Summary includes feeling question
+    
+    def mark_feeling_response(self):
+        """Mark that user responded to feeling question."""
+        self.user_responded_feeling = True
+    
+    def mark_closing_provided(self):
+        """Mark that closing message was provided."""
+        self.provided_closing = True
+        self.asked_for_code = True  # Closing includes code question
+    
+    def check_for_code_request(self, message: str) -> bool:
+        """Check if user wants finish code."""
+        message_lower = message.lower()
+        affirmative = ["yes", "yeah", "yep", "sure", "ok", "okay", "please", "code"]
+        if any(word in message_lower for word in affirmative):
+            self.user_wants_code = True
+            return True
+        return False
     
     def check_user_message_for_topics(self, message: str):
         """Extract topics from user message for stage 2."""
@@ -184,16 +205,8 @@ class ConversationState:
             self.small_talk_topics_covered.add("family")
 
         # Detect retirement age responses
-        if any(word in message_lower for word in ["retire", "retirement"]) or re.search(r'\b\d{2}\b', message):
+        if any(word in message_lower for word in ["retire", "retirement", "quit", "stop working"]) or re.search(r'\b\d{2}\b', message):
             self.small_talk_topics_covered.add("retirement_age")
-    
-    def check_for_i_am_phrase(self, message: str) -> bool:
-        """Check if user used 'I am' phrase in their message."""
-        pattern = r'\bI\s+am\b'
-        if re.search(pattern, message, re.IGNORECASE):
-            self.user_provided_i_am = True
-            return True
-        return False
 
 
 # ==========================================
@@ -227,7 +240,7 @@ class DatabaseService:
     def is_finish_code_unique(self, code: str) -> bool:
         """Check if finish code already exists in database."""
         try:
-            result = self.supabase.table("full_conversations")\
+            result = self.supabase.table("full_conversations_planning")\
                 .select("finish_code")\
                 .eq("finish_code", code)\
                 .execute()
@@ -257,7 +270,7 @@ class DatabaseService:
                 "finished_at": datetime.utcnow().isoformat()
             }
             
-            self.supabase.table("full_conversations").insert(data).execute()
+            self.supabase.table("full_conversations_planning").insert(data).execute()
             return True
             
         except Exception as error:
@@ -315,7 +328,7 @@ class AIService:
                     model="gpt-4-turbo-preview",
                     messages=api_messages,
                     temperature=0.7,
-                    max_tokens=150  # Enforce brevity
+                    max_tokens=200  # Slightly higher for planning details
                 )
                 
                 response_text = response.choices[0].message.content.strip()
@@ -345,20 +358,29 @@ class AIService:
         if stage == Stage.SMALL_TALK:
             covered = ", ".join(state.small_talk_topics_covered) if state.small_talk_topics_covered else "none"
             context_parts.append(f"Topics covered: {covered}")
-            context_parts.append("You must ask about: age, gender, and family members (one question at a time)")
+            context_parts.append("You must ask about: age, gender, family members, and retirement age (one question at a time)")
             
-        elif stage == Stage.SIMULATION:
-            context_parts.append("Do not proceed until you receive this")
+        elif stage == Stage.PLANNING:
+            context_parts.append("Ask the opening question about three main steps to retire financially prepared")
+            context_parts.append("Wait for user's response about first step, then proceed to Stage 4")
             
-        elif stage == Stage.PRE_EXPERIENCE:
-            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns in this stage")
+        elif stage == Stage.PREDETERMINATION:
+            context_parts.append(f"Turn {state.stage_4_turns + 1} of minimum 5 required turns")
             if state.stage_4_turns < 5:
-                context_parts.append("Continue asking detailed follow-up questions about their execution details")
+                context_parts.append("Guide user through ALL 3 STEPS with execution details (how, when, where)")
+                context_parts.append("ONE step at a time: Step 1 + details -> Step 2 + details -> Step 3 + details")
             else:
-                context_parts.append("You have completed 5 turns. You may wrap up this stage if sufficient detail gathered")
+                context_parts.append("You completed 5+ turns. Verify all 3 steps have details before moving to Stage 5")
                 
         elif stage == Stage.CALL_TO_ACTION:
-            context_parts.append("Provide recap, ask about feelings, give call to action, then final message")
+            if not state.provided_summary:
+                context_parts.append("CRITICAL: Provide synthesis paragraph + ask 'How does thinking about this future plan make you feel?'")
+            elif not state.user_responded_feeling:
+                context_parts.append("Wait for user to respond with their feeling")
+            elif not state.provided_closing:
+                context_parts.append("CRITICAL: Provide full closing (acknowledge feeling + 3 closing messages + 'Would you like to receive a finish code?')")
+            else:
+                context_parts.append("Wait for user to confirm they want the finish code")
         
         return " | ".join(context_parts)
 
@@ -367,7 +389,7 @@ class AIService:
 # APPLICATION CONTROLLER
 # ==========================================
 
-class SimulationApp:
+class PlanningApp:
     """Main application controller."""
     
     def __init__(self):
@@ -381,7 +403,7 @@ class SimulationApp:
         defaults = {
             "messages": [],
             "finish_code": self._generate_unique_finish_code(),
-            "simulation_complete": False,
+            "planning_complete": False,
             "data_saved": False,
             "state": ConversationState()
         }
@@ -422,9 +444,8 @@ class SimulationApp:
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             header {visibility: hidden;}
-            .stChatMessage {padding: 1rem;}
             </style>
-         """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         
         st.title("💰 Saving for the Future")
     
@@ -435,8 +456,10 @@ class SimulationApp:
                 role="assistant",
                 content=(
                     "Hello! Thank you for joining.\n\n"
-                    "I’m here to be your thinking partner for a quick session on your life after your main career—whether that means traditional retirement or simply having the financial freedom to work less.\n\n"
-                    "Looking that far ahead can be challenging on your own, but exploring it together can help clarify what truly matters to you. There are no right or wrong answers.\n\n"
+                    "I'm here to be your thinking partner for a quick session on your life after your main career—"
+                    "whether that means traditional retirement or simply having the financial freedom to work less.\n\n"
+                    "Looking that far ahead can be challenging on your own, but exploring it together can help "
+                    "clarify what truly matters to you. There are no right or wrong answers.\n\n"
                     "Ready to look ahead?"
                 )
             )
@@ -452,9 +475,9 @@ class SimulationApp:
     
     def _handle_user_input(self):
         """Process user input and generate response."""
-        # Show finish code if simulation complete
-        if st.session_state.simulation_complete:
-            st.success(f"✅ Session completed! Your finish code: **{st.session_state.finish_code}**")
+        # Show finish code if planning complete
+        if st.session_state.planning_complete:
+            st.success(f"✅ Planning session complete! Your finish code: **{st.session_state.finish_code}**")
             st.info("Please save this code and return to the survey.")
             return
         
@@ -485,14 +508,15 @@ class SimulationApp:
                 if not response_text:
                     st.error("Failed to generate response. Please try again.")
                     return
-                
+                #finish code
+                self._check_stage_5_substeps(response_text)
                 # Check if we should advance stages BEFORE appending message
                 self._check_stage_progression()
                 
                 # If just completed, append finish code
-                if st.session_state.state.stage == Stage.CALL_TO_ACTION and st.session_state.state.stage >=2:
+                if st.session_state.state.stage == Stage.COMPLETE:
                     response_text += f"\n\n---\n\n✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
-                    st.session_state.simulation_complete = True
+                    st.session_state.planning_complete = True
                 
                 st.markdown(response_text)
                 
@@ -500,9 +524,23 @@ class SimulationApp:
                 assistant_message = Message(role="assistant", content=response_text)
                 st.session_state.messages.append(assistant_message)
                 st.session_state.state.advance_turn()
+                
+                # Check if conversation just completed
+                if st.session_state.state.stage == Stage.COMPLETE and not st.session_state.planning_complete:
+                    # Display finish code in a new message
+                    finish_message = Message(
+                        role="assistant",
+                        content=f"✅ **Your finish code is: {st.session_state.finish_code}**\n\nPlease save this code to continue with the survey."
+                    )
+                    st.session_state.messages.append(finish_message)
+                    st.session_state.planning_complete = True
+                    
+                    # Display it immediately
+                    with st.chat_message("assistant", avatar="🤖"):
+                        st.markdown(finish_message.content)
         
         # Save to database if complete
-        if st.session_state.simulation_complete and not st.session_state.data_saved:
+        if st.session_state.planning_complete and not st.session_state.data_saved:
             success = self.db.save_conversation(
                 st.session_state.finish_code,
                 st.session_state.messages
@@ -516,7 +554,7 @@ class SimulationApp:
         
         # Check for readiness to start (from Stage 1)
         if state.stage == Stage.INTRODUCTION:
-            affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep", "let's", "lets"]
+            affirmative_words = ["yes", "ready", "sure", "ok", "start", "yeah", "yep", "let's", "lets", "go"]
             if any(word in user_input.lower() for word in affirmative_words):
                 state.advance_stage()
         
@@ -524,9 +562,14 @@ class SimulationApp:
         elif state.stage == Stage.SMALL_TALK:
             state.check_user_message_for_topics(user_input)
         
-        # Check for "I am" phrase in Stage 3
-        elif state.stage == Stage.SIMULATION:
-            state.check_for_i_am_phrase(user_input)
+        # Track Stage 5 sub-steps
+        elif state.stage == Stage.CALL_TO_ACTION:
+            if state.asked_feeling and not state.user_responded_feeling:
+                # User is responding to feeling question
+                state.mark_feeling_response()
+            elif state.asked_for_code and not state.user_wants_code:
+                # User is responding to code request
+                state.check_for_code_request(user_input)
     
     def _check_stage_progression(self):
         """Determine if stage should advance based on completion criteria."""
@@ -535,15 +578,29 @@ class SimulationApp:
         if state.stage == Stage.SMALL_TALK and state.can_advance_from_stage_2():
             state.advance_stage()
             
-        elif state.stage == Stage.SIMULATION and state.can_advance_from_stage_3():
+        elif state.stage == Stage.PLANNING and state.can_advance_from_stage_3():
             state.advance_stage()
             
-        elif state.stage == Stage.PRE_EXPERIENCE and state.can_advance_from_stage_4():
+        elif state.stage == Stage.PREDETERMINATION and state.can_advance_from_stage_4():
             state.advance_stage()
             
         elif state.stage == Stage.CALL_TO_ACTION and state.stage_turn_count >= 2:
             # After recap and call to action (typically 2-3 turns)
             state.advance_stage()
+    
+    def _check_stage_5_substeps(self, assistant_response: str):
+        """Track Stage 5 sub-steps based on AI response content."""
+        state = st.session_state.state
+        
+        if state.stage == Stage.CALL_TO_ACTION:
+            # Check if AI provided summary and asked feeling question
+            if "Here is the action plan" in assistant_response or "action plan for your future" in assistant_response:
+                if "How does" in assistant_response and "feel" in assistant_response:
+                    state.mark_summary_provided()
+            
+            # Check if AI provided closing with code question
+            if "Would you like to receive a finish code" in assistant_response or "receive a finish code" in assistant_response:
+                state.mark_closing_provided()
 
 
 # ==========================================
@@ -551,5 +608,5 @@ class SimulationApp:
 # ==========================================
 
 if __name__ == "__main__":
-    app = SimulationApp()
+    app = PlanningApp()
     app.run()
